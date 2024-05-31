@@ -1,0 +1,51 @@
+---
+linters:
+  disable:
+    - errcheck
+  enable:
+    - forbidigo
+    - gofmt
+    - gofumpt
+    - goimports
+    - gosimple
+    - govet
+    - ineffassign
+    - lll
+    - prealloc
+    - predeclared
+    - revive
+    - staticcheck
+    - stylecheck
+    - unused
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files.
+    - path: mocks/
+      linters:
+        - deadcode
+        - gofumpt
+        - goimports
+        - gosimple (megacheck)
+        - govet (vet, vetshadow)
+        - ineffassign
+        - lll
+        - revive
+        - staticcheck (megacheck)
+        - structcheck
+        - stylecheck
+        - typecheck
+        - unused (megacheck)
+        - varcheck
+    - linters:
+        - lll
+      source: "// nolint:lll"
+    - linters:
+        - stylecheck
+      source: "// nolint:stylecheck"
+    - linters:
+        - unused
+        - deadcode
+        - varcheck
+        - revive
+      source: "// nolint:unused"
