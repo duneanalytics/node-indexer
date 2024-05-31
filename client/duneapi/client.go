@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
+	"sync"
 	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/models"
@@ -15,14 +15,21 @@ import (
 )
 
 type Config struct {
-	URL                string
-	APIKey             string
-	Stack              models.EVMStack
+	APIKey string
+	URL    string
+
+	// this is used by DuneAPI to determine the logic used to decode the EVM transactions
+	Stack models.EVMStack
+	// the name of this blockchain as it will be stored in DuneAPI
+	BlockchainName string
+
+	// RPC json payloads can be very large, we default to compressing for better throughput
+	// - lowers latency
+	// - reduces bandwidth
 	DisableCompression bool
-	BlockchainName     string
 }
 
-type RPCBlockPayload struct {
+type RPCBlock struct {
 	BlockNumber string
 	Payload     []byte
 }
@@ -33,17 +40,29 @@ type BlockchainIngester interface {
 	//	- the context is cancelled
 	//  - channel is closed
 	//  - a fatal error occurs
-	Sync(ctx context.Context, blocksCh <-chan RPCBlockPayload) error
+	Sync(ctx context.Context, blocksCh <-chan RPCBlock) error
+
+	// SendBlock sends a block to DuneAPI
+	SendBlock(payload RPCBlock) error
+
+	// TODO:
+	// - Batching multiple blocks in a single request
+	// - API to discover the latest block number ingested
+	//   this can also provide "next block ranges" to push to DuneAPI
+	// - log/metrics on catching up/falling behind, distance from tip of chain
 }
 
 type client struct {
-	log        slog.Logger
+	log        *slog.Logger
 	httpClient *retryablehttp.Client
 	cfg        Config
 	compressor *zstd.Encoder
+	bufPool    *sync.Pool
 }
 
-func New(log slog.Logger, cfg Config) (*client, error) {
+var _ BlockchainIngester = &client{}
+
+func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line:unexported-return
 	comp, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest))
 	if err != nil {
 		return nil, err
@@ -53,12 +72,15 @@ func New(log slog.Logger, cfg Config) (*client, error) {
 		httpClient: retryablehttp.NewClient(),
 		cfg:        cfg,
 		compressor: comp,
+		bufPool: &sync.Pool{
+			New: func() interface{} {
+				return new(bytes.Buffer)
+			},
+		},
 	}, nil
 }
 
-func (c *client) Sync(ctx context.Context, blocksCh <-chan RPCBlockPayload) error {
-	// use a long lived buffer to avoid memory allocations
-	var buffer bytes.Buffer
+func (c *client) Sync(ctx context.Context, blocksCh <-chan RPCBlock) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -67,18 +89,32 @@ func (c *client) Sync(ctx context.Context, blocksCh <-chan RPCBlockPayload) erro
 			if !ok {
 				return nil // channel closed
 			}
-			request, err := c.buildRequest(&buffer, payload)
-			if err != nil {
-				return err
-			}
-			if err := c.sendBlock(request); err != nil {
-				return err
+			if err := c.SendBlock(payload); err != nil {
+				// TODO: implement DeadLetterQueue
+				// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
+				c.log.Error("SendBlock failed, continuing..", "blockNumber", payload.BlockNumber, "error", err)
 			}
 		}
 	}
 }
 
-func (c *client) buildRequest(buffer *bytes.Buffer, payload RPCBlockPayload) (BlockchainIngestRequest, error) {
+// SendBlock sends a block to DuneAPI
+func (c *client) SendBlock(payload RPCBlock) error {
+	start := time.Now()
+	buffer := c.bufPool.Get().(*bytes.Buffer)
+	defer func() {
+		c.bufPool.Put(buffer)
+		c.log.Info("SendBlock", "payloadLength", len(payload.Payload), "duration", time.Since(start))
+	}()
+
+	request, err := c.buildRequest(payload, buffer)
+	if err != nil {
+		return err
+	}
+	return c.sendRequest(request)
+}
+
+func (c *client) buildRequest(payload RPCBlock, buffer *bytes.Buffer) (BlockchainIngestRequest, error) {
 	var request BlockchainIngestRequest
 
 	if c.cfg.DisableCompression {
@@ -99,7 +135,8 @@ func (c *client) buildRequest(buffer *bytes.Buffer, payload RPCBlockPayload) (Bl
 	return request, nil
 }
 
-func (c *client) sendBlock(request BlockchainIngestRequest) error {
+func (c *client) sendRequest(request BlockchainIngestRequest) error {
+	// TODO: implement timeouts (context with deadline)
 	start := time.Now()
 	var err error
 	var response BlockchainIngestResponse
@@ -122,13 +159,13 @@ func (c *client) sendBlock(request BlockchainIngestRequest) error {
 	}()
 
 	url := fmt.Sprintf("%s/beta/blockchain/%s/chain", c.cfg.URL, c.cfg.BlockchainName)
-	req, err := http.NewRequest("POST", url, bytes.NewReader(request.Payload))
+	req, err := retryablehttp.NewRequest("POST", url, bytes.NewReader(request.Payload))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", request.ContentType)
 	req.Header.Set("x-idempotency-key", request.IdempotencyKey)
-	req.Header.Set("x-dune-evm-stack", request.EVMStack.String())
+	req.Header.Set("x-dune-evm-stack", request.EVMStack)
 	req.Header.Set("x-dune-api-key", c.cfg.APIKey)
 
 	resp, err := c.httpClient.Do(req)
@@ -145,7 +182,7 @@ func (c *client) sendBlock(request BlockchainIngestRequest) error {
 	return nil
 }
 
-func (c *client) idempotencyKey(rpcBlock RPCBlockPayload) string {
+func (c *client) idempotencyKey(rpcBlock RPCBlock) string {
 	// for idempotency we use the chain and block number
 	return fmt.Sprintf("%s-%s", c.cfg.BlockchainName, rpcBlock.BlockNumber)
 }

@@ -12,7 +12,7 @@ setup: bin/golangci-lint bin/gofumpt
 	go mod download
 
 bin/golangci-lint:
-	GOBIN=$(PWD)/bin go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2
+	GOBIN=$(PWD)/bin go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.0
 bin/gofumpt: bin
 	GOBIN=$(PWD)/bin go install mvdan.cc/gofumpt@v0.6.0
 
