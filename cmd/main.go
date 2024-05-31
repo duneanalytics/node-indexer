@@ -1,7 +1,7 @@
 package main
 
-// topsql is a "synchronized" that inserts into a MeteringDB all the records present on S3.
-// it has the ability to resume and continue from the last most recent record present in the DB.
+// ingester is a "synchronizer" that ingests into DuneAPI the blocks from the blockchain.
+// it has the ability to resume and catch up with the the head of the blockchain.
 
 import (
 	"context"
