@@ -14,36 +14,20 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-type Config struct {
-	APIKey string
-	URL    string
-
-	// this is used by DuneAPI to determine the logic used to decode the EVM transactions
-	Stack models.EVMStack
-	// the name of this blockchain as it will be stored in DuneAPI
-	BlockchainName string
-
-	// RPC json payloads can be very large, we default to compressing for better throughput
-	// - lowers latency
-	// - reduces bandwidth
-	DisableCompression bool
-}
-
-type RPCBlock struct {
-	BlockNumber string
-	Payload     []byte
-}
+const (
+	MaxRetries = 20 // try really hard to send the block
+)
 
 type BlockchainIngester interface {
-	// Sync pushes to DuneAPI the RPCBlockPayloads as they are received in an endless loop
+	// Sync pushes to DuneAPI the RPCBlock Payloads as they are received in an endless loop
 	// it will block until:
 	//	- the context is cancelled
 	//  - channel is closed
 	//  - a fatal error occurs
-	Sync(ctx context.Context, blocksCh <-chan RPCBlock) error
+	Sync(ctx context.Context, blocksCh <-chan models.RPCBlock) error
 
 	// SendBlock sends a block to DuneAPI
-	SendBlock(payload RPCBlock) error
+	SendBlock(payload models.RPCBlock) error
 
 	// TODO:
 	// - Batching multiple blocks in a single request
@@ -67,9 +51,14 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 	if err != nil {
 		return nil, err
 	}
+	httpClient := retryablehttp.NewClient()
+	httpClient.RetryMax = MaxRetries
+	httpClient.Logger = log
+	httpClient.CheckRetry = retryablehttp.DefaultRetryPolicy
+	httpClient.Backoff = retryablehttp.LinearJitterBackoff
 	return &client{
 		log:        log,
-		httpClient: retryablehttp.NewClient(),
+		httpClient: httpClient,
 		cfg:        cfg,
 		compressor: comp,
 		bufPool: &sync.Pool{
@@ -80,7 +69,7 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 	}, nil
 }
 
-func (c *client) Sync(ctx context.Context, blocksCh <-chan RPCBlock) error {
+func (c *client) Sync(ctx context.Context, blocksCh <-chan models.RPCBlock) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -99,7 +88,7 @@ func (c *client) Sync(ctx context.Context, blocksCh <-chan RPCBlock) error {
 }
 
 // SendBlock sends a block to DuneAPI
-func (c *client) SendBlock(payload RPCBlock) error {
+func (c *client) SendBlock(payload models.RPCBlock) error {
 	start := time.Now()
 	buffer := c.bufPool.Get().(*bytes.Buffer)
 	defer func() {
@@ -114,7 +103,7 @@ func (c *client) SendBlock(payload RPCBlock) error {
 	return c.sendRequest(request)
 }
 
-func (c *client) buildRequest(payload RPCBlock, buffer *bytes.Buffer) (BlockchainIngestRequest, error) {
+func (c *client) buildRequest(payload models.RPCBlock, buffer *bytes.Buffer) (BlockchainIngestRequest, error) {
 	var request BlockchainIngestRequest
 
 	if c.cfg.DisableCompression {
@@ -182,9 +171,9 @@ func (c *client) sendRequest(request BlockchainIngestRequest) error {
 	return nil
 }
 
-func (c *client) idempotencyKey(rpcBlock RPCBlock) string {
-	// for idempotency we use the chain and block number
-	return fmt.Sprintf("%s-%s", c.cfg.BlockchainName, rpcBlock.BlockNumber)
+func (c *client) idempotencyKey(rpcBlock models.RPCBlock) string {
+	// for idempotency we use the block number (should we use also the date?, or a startup timestamp?)
+	return fmt.Sprintf("%v", rpcBlock.BlockNumber)
 }
 
 func (c *client) Close() error {
