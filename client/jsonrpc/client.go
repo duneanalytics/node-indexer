@@ -20,7 +20,7 @@ type BlockchainClient interface {
 
 	// SendBlocks sends blocks from startBlockNumber to endBlockNumber to outChan, inclusive.
 	// If endBlockNumber is -1, it sends blocks from startBlockNumber to the tip of the chain
-	// it will run continueously until the context is cancelled
+	// it will run continuously until the context is cancelled
 	SendBlocks(ctx context.Context, outChan chan models.RPCBlock, startBlockNumber, endBlockNumber int64) error
 
 	Close() error
@@ -78,7 +78,7 @@ func (c *rpcClient) LatestBlockNumber() (int64, error) {
 	return hexutils.IntFromHex(resp.Result)
 }
 
-// getResponseBody sends a request to the OpStack server and returns the response body
+// getResponseBody sends a request to the server and returns the response body
 func (c *rpcClient) getResponseBody(
 	ctx context.Context, method string, params interface{}, output *bytes.Buffer,
 ) error {
