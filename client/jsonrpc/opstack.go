@@ -47,7 +47,6 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 	group, ctx := errgroup.WithContext(ctx)
 	results := make([]*bytes.Buffer, len(methods))
 	for i, method := range methods {
-
 		results[i] = c.bufPool.Get().(*bytes.Buffer)
 		defer c.bufPool.Put(results[i])
 
