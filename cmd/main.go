@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/client/duneapi"
+	"github.com/duneanalytics/blockchain-ingester/client/jsonrpc"
 	"github.com/duneanalytics/blockchain-ingester/config"
+	"github.com/duneanalytics/blockchain-ingester/ingester"
+	"github.com/duneanalytics/blockchain-ingester/models"
 )
 
 func init() {
@@ -42,21 +45,34 @@ func main() {
 	defer duneClient.Close()
 
 	var wg stdsync.WaitGroup
+	var rpcClient jsonrpc.BlockchainClient
 
-	// rpcClient, err := jsonrpc.NewClient(&rpc.Config{
-	// 	NodeURL:      cfg.BlockchainNodeURL,
-	// 	PoolInterval: cfg.PoolInterval,
-	// 	Stack:        cfg.BlockchainStack,
-	// })
+	switch cfg.RPCStack {
+	case models.OpStack:
+		rpcClient, err = jsonrpc.NewOpStackClient(logger, jsonrpc.Config{
+			URL: cfg.RPCNode.NodeURL,
+		})
+	default:
+		stdlog.Fatalf("unsupported RPC stack: %s", cfg.RPCStack)
+	}
+	if err != nil {
+		stdlog.Fatal(err)
+	}
 
-	// harvester, err := harvester.New(&harvester.Config{
-	// 	Logger:     logger,
-	// 	DuneClient: duneClient,
-	// 	RPCClient:  rpcClient,
-	// })
+	ingester := ingester.New(
+		logger,
+		rpcClient,
+		duneClient,
+		ingester.Config{
+			PollInterval:     cfg.PollInterval,
+			StartBlockHeight: cfg.BlockHeight,
+		},
+	)
 
-	// wg.Add(1)
-	// harvester.Run(ctx, &wg)
+	wg.Add(1)
+	ingester.Run(context.Background(), &wg)
+
+	// TODO: add a metrics exporter or healthcheck http endpoint ?
 
 	_, cancelFn := context.WithCancel(context.Background())
 	quit := make(chan os.Signal, 1)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/models"
 	"golang.org/x/sync/errgroup"
@@ -16,9 +17,12 @@ type OpStackClient struct {
 
 var _ BlockchainClient = &OpStackClient{}
 
-func NewOpStackClient(cfg Config, log *slog.Logger) *OpStackClient {
-	rpcClient := NewRPCClient(cfg, log)
-	return &OpStackClient{*rpcClient}
+func NewOpStackClient(log *slog.Logger, cfg Config) (*OpStackClient, error) {
+	rpcClient, err := NewClient(log, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &OpStackClient{*rpcClient}, nil
 }
 
 // BlockByNumber returns the block with the given blockNumber.
@@ -31,6 +35,13 @@ func NewOpStackClient(cfg Config, log *slog.Logger) *OpStackClient {
 //
 //	we should handle the case where it is not available
 func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (models.RPCBlock, error) {
+	tStart := time.Now()
+	defer func() {
+		c.log.Info("BlockByNumber",
+			"blockNumber", blockNumber,
+			"duration", time.Since(tStart),
+		)
+	}()
 	blockNumberHex := fmt.Sprintf("0x%x", blockNumber)
 
 	// TODO: split this into mandatory and optional methods
@@ -78,26 +89,4 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 		BlockNumber: blockNumber,
 		Payload:     buffer.Bytes(),
 	}, nil
-}
-
-func (c *OpStackClient) SendBlocks(
-	ctx context.Context, outChan chan models.RPCBlock, startBlockNumber, endBlockNumber int64,
-) error {
-	dontStop := endBlockNumber <= startBlockNumber
-	for blockNumber := startBlockNumber; dontStop || startBlockNumber <= endBlockNumber; blockNumber++ {
-		block, err := c.BlockByNumber(ctx, blockNumber)
-		if err != nil {
-			c.log.Error("Failed to get block by number",
-				"blockNumber", blockNumber,
-				"error", err,
-			)
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case outChan <- block:
-		}
-	}
-	return nil
 }

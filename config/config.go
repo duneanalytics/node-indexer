@@ -21,8 +21,7 @@ func (d DuneClient) HasError() error {
 }
 
 type RPCClient struct {
-	NodeURL      string        `long:"rpc-node-url" env:"RPC_NODE_URL" description:"URL for the blockchain node"`
-	PoolInterval time.Duration `long:"rpc-pool-interval" env:"RPC_POOL_INTERVAL" description:"Interval to pool the blockchain node" default:"500millis"` // nolint:lll
+	NodeURL string `long:"rpc-node-url" env:"RPC_NODE_URL" description:"URL for the blockchain node"`
 }
 
 func (r RPCClient) HasError() error {
@@ -33,12 +32,12 @@ func (r RPCClient) HasError() error {
 }
 
 type Config struct {
+	BlockHeight    int64  `long:"block-height" env:"BLOCK_HEIGHT" description:"block height to start from" default:"-1"`      // nolint:lll
+	BlockchainName string `long:"blockchain-name" env:"BLOCKCHAIN_NAME" description:"name of the blockchain" required:"true"` // nolint:lll
 	Dune           DuneClient
+	PollInterval   time.Duration `long:"rpc-poll-interval" env:"RPC_POLL_INTERVAL" description:"Interval to poll the blockchain node" default:"500millis"` // nolint:lll
 	RPCNode        RPCClient
-	BlockchainName string          `long:"blockchain-name" env:"BLOCKCHAIN_NAME" description:"name of the blockchain" required:"true"` // nolint:lll
-	RPCStack       models.EVMStack `long:"rpc-stack" env:"RPC_STACK" description:"Stack for the RPC client" default:"opstack"`         // nolint:lll
-	BatchSize      int             `long:"batch-size" env:"BATCH_SIZE" description:"number of blocks to submit to Dune" default:"3"`   // nolint:lll
-	BlockHeight    int64           `long:"block-height" env:"BLOCK_HEIGHT" description:"block height to start from" default:"-1"`      // nolint:lll
+	RPCStack       models.EVMStack `long:"rpc-stack" env:"RPC_STACK" description:"Stack for the RPC client" default:"opstack"` // nolint:lll
 }
 
 func (c Config) HasError() error {
