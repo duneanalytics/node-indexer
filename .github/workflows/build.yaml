@@ -1,0 +1,35 @@
+---
+name: "Build"
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: "Build Docker image and push to Dockerhub"
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: eu-west-1
+
+    steps:
+      - uses: actions/checkout@v3
+
+      # - name: Configure AWS Credentials
+      #   uses: aws-actions/configure-aws-credentials@v1.6.1
+      #   with:
+      #     role-to-assume: arn:aws:iam::118330671040:role/duneapi-ci
+      #     aws-region: ${{ env.AWS_REGION }}
+
+      # - name: Login to Amazon ECR
+      #   id: login-ecr
+      #   uses: aws-actions/amazon-ecr-login@v1
+
+      - env:
+          GITHUB_TOKEN: ${{ secrets.DUNE_ENG_ACCESS_TOKEN }}
+          ECR_REGISTRY: public.ecr.aws/duneanalytics
+          ECR_REPOSITORY: blockchain-ingester
+        run: |
+          make image-build
+          make image-push
