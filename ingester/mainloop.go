@@ -41,13 +41,13 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber, maxCount int64) er
 		return i.ReportProgress(ctx)
 	})
 
-	if err := errGroup.Wait(); err != nil && err != errFinishedConsumeBlocks {
+	if err := errGroup.Wait(); err != nil && err != ErrFinishedConsumeBlocks {
 		return err
 	}
 	return nil
 }
 
-var errFinishedConsumeBlocks = errors.New("finished ConsumeBlocks")
+var ErrFinishedConsumeBlocks = errors.New("finished ConsumeBlocks")
 
 // ConsumeBlocks from the NPC Node
 func (i *ingester) ConsumeBlocks(
@@ -57,6 +57,7 @@ func (i *ingester) ConsumeBlocks(
 	latestBlockNumber := i.tryUpdateLatestBlockNumber()
 
 	waitForBlock := func(blockNumber, latestBlockNumber int64) int64 {
+		// TODO: handle cancellation here
 		for blockNumber > latestBlockNumber {
 			i.log.Info(fmt.Sprintf("Waiting %v for block to be available..", i.cfg.PollInterval),
 				"blockNumber", blockNumber,
@@ -94,7 +95,7 @@ func (i *ingester) ConsumeBlocks(
 
 		select {
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		case outChan <- block:
 		}
 
@@ -110,7 +111,7 @@ func (i *ingester) ConsumeBlocks(
 			)
 		}
 	}
-	return errFinishedConsumeBlocks
+	return ErrFinishedConsumeBlocks // FIXME: this is wrong
 }
 
 func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlock) error {
