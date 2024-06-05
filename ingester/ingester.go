@@ -3,7 +3,6 @@ package ingester
 import (
 	"context"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/client/duneapi"
@@ -12,7 +11,8 @@ import (
 )
 
 type Ingester interface {
-	Run(ctx context.Context, wg *sync.WaitGroup) error
+	// Run starts the ingester and blocks until the context is cancelled or maxCount blocks are ingested
+	Run(ctx context.Context, startBlockNumber, maxCount int64) error
 
 	// ConsumeBlocks sends blocks from startBlockNumber to endBlockNumber to outChan, inclusive.
 	// If endBlockNumber is -1, it sends blocks from startBlockNumber to the tip of the chain
@@ -33,9 +33,8 @@ type Ingester interface {
 const defaultMaxBatchSize = 1
 
 type Config struct {
-	MaxBatchSize     int
-	StartBlockHeight int64
-	PollInterval     time.Duration
+	MaxBatchSize int
+	PollInterval time.Duration
 }
 
 type Info struct {
