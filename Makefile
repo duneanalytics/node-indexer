@@ -8,9 +8,11 @@ TEST_TIMEOUT := 10s
 
 all: lint test build
 
-setup: bin/golangci-lint bin/gofumpt
+setup: bin/golangci-lint bin/gofumpt bin/moq
 	go mod download
 
+bin/moq:
+	GOBIN=$(PWD)/bin go install github.com/matryer/moq@v0.3.4
 bin/golangci-lint:
 	GOBIN=$(PWD)/bin go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.0
 bin/gofumpt: bin
@@ -29,6 +31,11 @@ lint: bin/golangci-lint bin/gofumpt
 test:
 	go mod tidy
 	go test -timeout=$(TEST_TIMEOUT) -race -bench=. -benchmem -cover ./...
+
+gen-mocks: bin/moq ./client/jsonrpc/ ./client/duneapi/
+	./bin/moq -pkg jsonrpc_mock -out ./mocks/jsonrpc/rpcnode.go ./client/jsonrpc BlockchainClient
+	./bin/moq -pkg duneapi_mock -out ./mocks/duneapi/client.go ./client/duneapi BlockchainIngester
+
 
 image-build:
 	@echo "# Building ingester docker image..."
