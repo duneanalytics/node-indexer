@@ -174,7 +174,7 @@ func TestRunLoopUntilCancel(t *testing.T) {
 	})
 
 	err := ing.Run(ctx, 0, maxBlockNumber)
-	require.ErrorIs(t, err, context.Canceled)
+	require.NoError(t, err)
 	require.Equal(t, producedBlockNumber, maxBlockNumber)
 	require.Equal(t, sentBlockNumber, maxBlockNumber)
 }

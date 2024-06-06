@@ -69,16 +69,17 @@ func main() {
 		},
 	)
 
+	ctx, cancelFn := context.WithCancel(context.Background())
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := ingester.Run(context.Background(), cfg.BlockHeight, 0 /* maxCount */)
+		err := ingester.Run(ctx, cfg.BlockHeight, 0 /* maxCount */)
 		logger.Info("Ingester finished", "err", err)
 	}()
 
 	// TODO: add a metrics exporter or healthcheck http endpoint ?
 
-	_, cancelFn := context.WithCancel(context.Background())
 	quit := make(chan os.Signal, 1)
 	// handle Interrupt (ctrl-c) Term, used by `kill` et al, HUP which is commonly used to reload configs
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
