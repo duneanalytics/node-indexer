@@ -120,7 +120,8 @@ func (c *client) sendRequest(request BlockchainIngestRequest) error {
 		}
 	}()
 
-	url := fmt.Sprintf("%s/beta/blockchain/%s/chain", c.cfg.URL, c.cfg.BlockchainName)
+	url := fmt.Sprintf("%s/beta/blockchain/%s/ingest", c.cfg.URL, c.cfg.BlockchainName)
+	c.log.Debug("Sending request", "url", url)
 	req, err := retryablehttp.NewRequest("POST", url, bytes.NewReader(request.Payload))
 	if err != nil {
 		return err

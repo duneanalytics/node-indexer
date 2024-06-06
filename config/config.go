@@ -10,7 +10,7 @@ import (
 
 type DuneClient struct {
 	APIKey string `long:"dune-api-key" env:"DUNE_API_KEY" description:"API key for DuneAPI"`
-	URL    string `long:"dune-api-url" env:"DUNE_API_URL" description:"URL for DuneAPI" default:"https://api.dune.com/"`
+	URL    string `long:"dune-api-url" env:"DUNE_API_URL" description:"URL for DuneAPI" default:"https://api.dune.com/api"`
 }
 
 func (d DuneClient) HasError() error {
