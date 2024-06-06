@@ -1,12 +1,12 @@
-.PHONY: all setup lint harvester test image-build image-push
+.PHONY: all setup lint build test image-build image-push
 
-APPLICATION := harvester
+APPLICATION := ingester
 GITHUB_SHA ?= HEAD
 REF_TAG := $(shell echo ${GITHUB_REF_NAME} | tr -cd '[:alnum:]')
 IMAGE_TAG := ${ECR_REGISTRY}/${ECR_REPOSITORY}:${REF_TAG}-$(shell git rev-parse --short "${GITHUB_SHA}")-${GITHUB_RUN_NUMBER}
 TEST_TIMEOUT := 10s
 
-all: lint test harvester
+all: lint test build
 
 setup: bin/golangci-lint bin/gofumpt
 	go mod download
@@ -16,8 +16,8 @@ bin/golangci-lint:
 bin/gofumpt: bin
 	GOBIN=$(PWD)/bin go install mvdan.cc/gofumpt@v0.6.0
 
-harvester: lint cmd/main.go
-	go build -o harvester cmd/main.go
+build: lint cmd/main.go
+	go build -o ingester cmd/main.go
 
 lint: bin/golangci-lint bin/gofumpt
 	go fmt ./...
@@ -31,11 +31,11 @@ test:
 	go test -timeout=$(TEST_TIMEOUT) -race -bench=. -benchmem -cover ./...
 
 image-build:
-	@echo "# Building harvester docker image..."
+	@echo "# Building ingester docker image..."
 	docker build -t $(APPLICATION) -f Dockerfile --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} .
 
 image-push: image-build
-	@echo "# Pushing harvester docker image..."
+	@echo "# Pushing ingester docker image..."
 	docker tag $(APPLICATION) ${IMAGE_TAG}
-	docker push ${IMAGE_TAG}
+	# docker push ${IMAGE_TAG}
 	docker rmi ${IMAGE_TAG}
