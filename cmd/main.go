@@ -64,13 +64,17 @@ func main() {
 		rpcClient,
 		duneClient,
 		ingester.Config{
-			PollInterval:     cfg.PollInterval,
-			StartBlockHeight: cfg.BlockHeight,
+			PollInterval: cfg.PollInterval,
+			MaxBatchSize: 1,
 		},
 	)
 
 	wg.Add(1)
-	ingester.Run(context.Background(), &wg)
+	go func() {
+		defer wg.Done()
+		err := ingester.Run(context.Background(), cfg.BlockHeight, 0 /* maxCount */)
+		logger.Info("Ingester finished", "err", err)
+	}()
 
 	// TODO: add a metrics exporter or healthcheck http endpoint ?
 

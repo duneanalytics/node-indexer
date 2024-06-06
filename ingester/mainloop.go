@@ -3,7 +3,6 @@ package ingester
 import (
 	"context"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -12,30 +11,28 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func (i *ingester) Run(ctx context.Context, wg *sync.WaitGroup) error {
-	defer wg.Done()
-
+func (i *ingester) Run(ctx context.Context, startBlockNumber, maxCount int64) error {
 	inFlightChan := make(chan models.RPCBlock, i.cfg.MaxBatchSize)
 	defer close(inFlightChan)
 
 	var err error
 
-	startBlockNumber := i.cfg.StartBlockHeight
-	if startBlockNumber <= 0 {
+	if startBlockNumber < 0 {
 		startBlockNumber, err = i.node.LatestBlockNumber()
 		if err != nil {
 			return errors.Errorf("failed to get latest block number: %w", err)
 		}
 	}
+
 	i.log.Info("Starting ingester",
 		"maxBatchSize", i.cfg.MaxBatchSize,
-		"startBlockHeight", i.cfg.StartBlockHeight,
 		"startBlockNumber", startBlockNumber,
+		"maxCount", maxCount,
 	)
 
 	errGroup, ctx := errgroup.WithContext(ctx)
 	errGroup.Go(func() error {
-		return i.ConsumeBlocks(ctx, inFlightChan, startBlockNumber, -1)
+		return i.ConsumeBlocks(ctx, inFlightChan, startBlockNumber, startBlockNumber+maxCount)
 	})
 	errGroup.Go(func() error {
 		return i.SendBlocks(ctx, inFlightChan)
@@ -44,8 +41,13 @@ func (i *ingester) Run(ctx context.Context, wg *sync.WaitGroup) error {
 		return i.ReportProgress(ctx)
 	})
 
-	return errGroup.Wait()
+	if err := errGroup.Wait(); err != nil && err != ErrFinishedConsumeBlocks {
+		return err
+	}
+	return nil
 }
+
+var ErrFinishedConsumeBlocks = errors.New("finished ConsumeBlocks")
 
 // ConsumeBlocks from the NPC Node
 func (i *ingester) ConsumeBlocks(
@@ -55,6 +57,7 @@ func (i *ingester) ConsumeBlocks(
 	latestBlockNumber := i.tryUpdateLatestBlockNumber()
 
 	waitForBlock := func(blockNumber, latestBlockNumber int64) int64 {
+		// TODO: handle cancellation here
 		for blockNumber > latestBlockNumber {
 			i.log.Info(fmt.Sprintf("Waiting %v for block to be available..", i.cfg.PollInterval),
 				"blockNumber", blockNumber,
@@ -66,7 +69,7 @@ func (i *ingester) ConsumeBlocks(
 		return latestBlockNumber
 	}
 
-	for blockNumber := startBlockNumber; dontStop || startBlockNumber <= endBlockNumber; blockNumber++ {
+	for blockNumber := startBlockNumber; dontStop || blockNumber <= endBlockNumber; blockNumber++ {
 
 		latestBlockNumber = waitForBlock(blockNumber, latestBlockNumber)
 		startTime := time.Now()
@@ -92,7 +95,7 @@ func (i *ingester) ConsumeBlocks(
 
 		select {
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		case outChan <- block:
 		}
 
@@ -108,7 +111,7 @@ func (i *ingester) ConsumeBlocks(
 			)
 		}
 	}
-	return nil
+	return ErrFinishedConsumeBlocks // FIXME: this is wrong
 }
 
 func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlock) error {
