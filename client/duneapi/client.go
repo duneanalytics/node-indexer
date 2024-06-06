@@ -2,7 +2,6 @@ package duneapi
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -19,18 +18,9 @@ const (
 )
 
 type BlockchainIngester interface {
-	// Sync pushes to DuneAPI the RPCBlock Payloads as they are received in an endless loop
-	// it will block until:
-	//	- the context is cancelled
-	//  - channel is closed
-	//  - a fatal error occurs
-	Sync(ctx context.Context, blocksCh <-chan models.RPCBlock) error
-
 	// SendBlock sends a block to DuneAPI
 	SendBlock(payload models.RPCBlock) error
 
-	// TODO:
-	// - Batching multiple blocks in a single request
 	// - API to discover the latest block number ingested
 	//   this can also provide "next block ranges" to push to DuneAPI
 	// - log/metrics on catching up/falling behind, distance from tip of chain
@@ -69,25 +59,8 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 	}, nil
 }
 
-func (c *client) Sync(ctx context.Context, blocksCh <-chan models.RPCBlock) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case payload, ok := <-blocksCh:
-			if !ok {
-				return nil // channel closed
-			}
-			if err := c.SendBlock(payload); err != nil {
-				// TODO: implement DeadLetterQueue
-				// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
-				c.log.Error("SendBlock failed, continuing..", "blockNumber", payload.BlockNumber, "error", err)
-			}
-		}
-	}
-}
-
 // SendBlock sends a block to DuneAPI
+// TODO: support batching multiple blocks in a single request
 func (c *client) SendBlock(payload models.RPCBlock) error {
 	start := time.Now()
 	buffer := c.bufPool.Get().(*bytes.Buffer)

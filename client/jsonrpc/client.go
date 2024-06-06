@@ -17,12 +17,6 @@ import (
 type BlockchainClient interface {
 	LatestBlockNumber() (int64, error)
 	BlockByNumber(ctx context.Context, blockNumber int64) (models.RPCBlock, error)
-
-	// SendBlocks sends blocks from startBlockNumber to endBlockNumber to outChan, inclusive.
-	// If endBlockNumber is -1, it sends blocks from startBlockNumber to the tip of the chain
-	// it will run continuously until the context is cancelled
-	SendBlocks(ctx context.Context, outChan chan models.RPCBlock, startBlockNumber, endBlockNumber int64) error
-
 	Close() error
 }
 
@@ -37,13 +31,13 @@ type rpcClient struct {
 	bufPool *sync.Pool
 }
 
-func NewRPCClient(cfg Config, log *slog.Logger) *rpcClient { // revive:disable-line:unexported-return
+func NewClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:disable-line:unexported-return
 	client := retryablehttp.NewClient()
 	client.RetryMax = MaxRetries
 	client.Logger = log
 	client.CheckRetry = retryablehttp.DefaultRetryPolicy
 	client.Backoff = retryablehttp.LinearJitterBackoff
-	return &rpcClient{
+	rpc := &rpcClient{
 		client: client,
 		cfg:    cfg,
 		log:    log,
@@ -53,6 +47,12 @@ func NewRPCClient(cfg Config, log *slog.Logger) *rpcClient { // revive:disable-l
 			},
 		},
 	}
+	// lets validate RPC node is up & reachable
+	_, err := rpc.LatestBlockNumber()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to jsonrpc: %w", err)
+	}
+	return rpc, nil
 }
 
 func (c *rpcClient) LatestBlockNumber() (int64, error) {
