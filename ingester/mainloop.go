@@ -57,8 +57,12 @@ func (i *ingester) ConsumeBlocks(
 	latestBlockNumber := i.tryUpdateLatestBlockNumber()
 
 	waitForBlock := func(blockNumber, latestBlockNumber int64) int64 {
-		// TODO: handle cancellation here
 		for blockNumber > latestBlockNumber {
+			select {
+			case <-ctx.Done():
+				return latestBlockNumber
+			default:
+			}
 			i.log.Info(fmt.Sprintf("Waiting %v for block to be available..", i.cfg.PollInterval),
 				"blockNumber", blockNumber,
 				"latestBlockNumber", latestBlockNumber,
@@ -70,7 +74,6 @@ func (i *ingester) ConsumeBlocks(
 	}
 
 	for blockNumber := startBlockNumber; dontStop || blockNumber <= endBlockNumber; blockNumber++ {
-
 		latestBlockNumber = waitForBlock(blockNumber, latestBlockNumber)
 		startTime := time.Now()
 
@@ -86,6 +89,11 @@ func (i *ingester) ConsumeBlocks(
 				BlockNumber: blockNumber,
 				Error:       err,
 			})
+
+			if errors.Is(err, context.Canceled) {
+				return err
+			}
+
 			// TODO: should I sleep (backoff) here?
 			continue
 		}
@@ -118,7 +126,7 @@ func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlo
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil // context canceled
 		case payload, ok := <-blocksCh:
 			// TODO: we should batch RCP blocks here before sending to Dune.
 			if !ok {
