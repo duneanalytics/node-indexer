@@ -65,8 +65,9 @@ func main() {
 		rpcClient,
 		duneClient,
 		ingester.Config{
-			PollInterval: cfg.PollInterval,
-			MaxBatchSize: 1,
+			MaxBatchSize:           1,
+			ReportProgressInterval: cfg.ReportProgressInterval,
+			PollInterval:           cfg.PollInterval,
 		},
 	)
 
