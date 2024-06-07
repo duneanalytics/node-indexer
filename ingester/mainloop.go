@@ -151,7 +151,7 @@ func (i *ingester) tryUpdateLatestBlockNumber() int64 {
 }
 
 func (i *ingester) ReportProgress(ctx context.Context) error {
-	timer := time.NewTicker(20 * time.Second)
+	timer := time.NewTicker(i.cfg.ReportProgressInterval)
 	defer timer.Stop()
 
 	previousTime := time.Now()

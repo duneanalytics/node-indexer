@@ -19,7 +19,7 @@ bin/gofumpt: bin
 	GOBIN=$(PWD)/bin go install mvdan.cc/gofumpt@v0.6.0
 
 build: lint cmd/main.go
-	go build -o ingester cmd/main.go
+	go build -o harvester cmd/main.go
 
 lint: bin/golangci-lint bin/gofumpt
 	go fmt ./...

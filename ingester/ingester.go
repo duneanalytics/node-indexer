@@ -33,8 +33,9 @@ type Ingester interface {
 const defaultMaxBatchSize = 1
 
 type Config struct {
-	MaxBatchSize int
-	PollInterval time.Duration
+	MaxBatchSize           int
+	PollInterval           time.Duration
+	ReportProgressInterval time.Duration
 }
 
 type Info struct {
@@ -77,5 +78,5 @@ func New(log *slog.Logger, node jsonrpc.BlockchainClient, dune duneapi.Blockchai
 }
 
 func (i *ingester) Info() Info {
-	return Info{}
+	return i.info
 }

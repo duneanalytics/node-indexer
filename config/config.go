@@ -32,12 +32,14 @@ func (r RPCClient) HasError() error {
 }
 
 type Config struct {
-	BlockHeight    int64  `long:"block-height" env:"BLOCK_HEIGHT" description:"block height to start from" default:"-1"`      // nolint:lll
-	BlockchainName string `long:"blockchain-name" env:"BLOCKCHAIN_NAME" description:"name of the blockchain" required:"true"` // nolint:lll
-	Dune           DuneClient
-	PollInterval   time.Duration `long:"rpc-poll-interval" env:"RPC_POLL_INTERVAL" description:"Interval to poll the blockchain node" default:"500millis"` // nolint:lll
-	RPCNode        RPCClient
-	RPCStack       models.EVMStack `long:"rpc-stack" env:"RPC_STACK" description:"Stack for the RPC client" default:"opstack"` // nolint:lll
+	BlockHeight            int64  `long:"block-height" env:"BLOCK_HEIGHT" description:"block height to start from" default:"-1"`      // nolint:lll
+	BlockchainName         string `long:"blockchain-name" env:"BLOCKCHAIN_NAME" description:"name of the blockchain" required:"true"` // nolint:lll
+	Dune                   DuneClient
+	PollInterval           time.Duration `long:"rpc-poll-interval" env:"RPC_POLL_INTERVAL" description:"Interval to poll the blockchain node" default:"200ms"` // nolint:lll
+	RPCNode                RPCClient
+	RPCStack               models.EVMStack `long:"rpc-stack" env:"RPC_STACK" description:"Stack for the RPC client" default:"opstack"`                              // nolint:lll
+	ReportProgressInterval time.Duration   `long:"report-progress-interval" env:"REPORT_PROGRESS_INTERVAL" description:"Interval to report progress" default:"20s"` // nolint:lll
+	DisableCompression     bool            `long:"disable-compression" env:"DISABLE_COMPRESSION" description:"Disable compression on requests to DuneAPI"`          // nolint: lll
 }
 
 func (c Config) HasError() error {

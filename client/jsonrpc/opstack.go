@@ -44,6 +44,7 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 	}()
 	blockNumberHex := fmt.Sprintf("0x%x", blockNumber)
 
+	traceArgs := map[string]string{"tracer": "callTracer"}
 	// TODO: split this into mandatory and optional methods
 	methods := []string{
 		"eth_getBlockByNumber",
@@ -53,7 +54,7 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 	methodArgs := map[string][]any{
 		"eth_getBlockByNumber":     {blockNumberHex, true},
 		"eth_getBlockReceipts":     {blockNumberHex},
-		"debug_traceBlockByNumber": {blockNumberHex, `{"tracer":"callTracer"}`},
+		"debug_traceBlockByNumber": {blockNumberHex, traceArgs},
 	}
 	group, ctx := errgroup.WithContext(ctx)
 	results := make([]*bytes.Buffer, len(methods))
@@ -81,9 +82,8 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 	// copy the responses in order
 	var buffer bytes.Buffer
 	for _, res := range results {
-		buffer.Grow(res.Len() + 1)
+		buffer.Grow(res.Len())
 		buffer.ReadFrom(res)
-		buffer.WriteString("\n")
 	}
 	return models.RPCBlock{
 		BlockNumber: blockNumber,

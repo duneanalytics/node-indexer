@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/lib/hexutils"
 	"github.com/duneanalytics/blockchain-ingester/models"
@@ -21,7 +22,8 @@ type BlockchainClient interface {
 }
 
 const (
-	MaxRetries = 10
+	MaxRetries            = 10
+	DefaultRequestTimeout = 30 * time.Second
 )
 
 type rpcClient struct {
@@ -37,6 +39,7 @@ func NewClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:dis
 	client.Logger = log
 	client.CheckRetry = retryablehttp.DefaultRetryPolicy
 	client.Backoff = retryablehttp.LinearJitterBackoff
+	client.HTTPClient.Timeout = DefaultRequestTimeout
 	rpc := &rpcClient{
 		client: client,
 		cfg:    cfg,
@@ -80,7 +83,7 @@ func (c *rpcClient) LatestBlockNumber() (int64, error) {
 
 // getResponseBody sends a request to the server and returns the response body
 func (c *rpcClient) getResponseBody(
-	ctx context.Context, method string, params interface{}, output *bytes.Buffer,
+	ctx context.Context, method string, params []any, output *bytes.Buffer,
 ) error {
 	reqData := map[string]interface{}{
 		"jsonrpc": "2.0",

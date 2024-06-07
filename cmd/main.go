@@ -34,10 +34,11 @@ func main() {
 	}
 
 	duneClient, err := duneapi.New(logger, duneapi.Config{
-		APIKey:         cfg.Dune.APIKey,
-		URL:            cfg.Dune.URL,
-		BlockchainName: cfg.BlockchainName,
-		Stack:          cfg.RPCStack,
+		APIKey:             cfg.Dune.APIKey,
+		URL:                cfg.Dune.URL,
+		BlockchainName:     cfg.BlockchainName,
+		Stack:              cfg.RPCStack,
+		DisableCompression: cfg.DisableCompression,
 	})
 	if err != nil {
 		stdlog.Fatal(err)
@@ -64,21 +65,22 @@ func main() {
 		rpcClient,
 		duneClient,
 		ingester.Config{
-			PollInterval: cfg.PollInterval,
-			MaxBatchSize: 1,
+			MaxBatchSize:           1,
+			PollInterval:           cfg.PollInterval,
+			ReportProgressInterval: cfg.ReportProgressInterval,
 		},
 	)
 
+	ctx, cancelFn := context.WithCancel(context.Background())
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := ingester.Run(context.Background(), cfg.BlockHeight, 0 /* maxCount */)
+		err := ingester.Run(ctx, cfg.BlockHeight, 0 /* maxCount */)
 		logger.Info("Ingester finished", "err", err)
 	}()
 
 	// TODO: add a metrics exporter or healthcheck http endpoint ?
 
-	_, cancelFn := context.WithCancel(context.Background())
 	quit := make(chan os.Signal, 1)
 	// handle Interrupt (ctrl-c) Term, used by `kill` et al, HUP which is commonly used to reload configs
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
