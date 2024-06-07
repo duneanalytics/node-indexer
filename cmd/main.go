@@ -34,10 +34,11 @@ func main() {
 	}
 
 	duneClient, err := duneapi.New(logger, duneapi.Config{
-		APIKey:         cfg.Dune.APIKey,
-		URL:            cfg.Dune.URL,
-		BlockchainName: cfg.BlockchainName,
-		Stack:          cfg.RPCStack,
+		APIKey:             cfg.Dune.APIKey,
+		URL:                cfg.Dune.URL,
+		BlockchainName:     cfg.BlockchainName,
+		Stack:              cfg.RPCStack,
+		DisableCompression: !cfg.EnableCompression,
 	})
 	if err != nil {
 		stdlog.Fatal(err)
