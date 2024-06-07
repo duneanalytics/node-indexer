@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
@@ -92,6 +93,7 @@ func (c *client) buildRequest(payload models.RPCBlock, buffer *bytes.Buffer) (Bl
 		request.ContentType = "application/zstd"
 		request.Payload = buffer.Bytes()
 	}
+	request.BlockNumber = payload.BlockNumber
 	request.IdempotencyKey = c.idempotencyKey(payload)
 	request.EVMStack = c.cfg.Stack.String()
 	return request, nil
@@ -105,11 +107,14 @@ func (c *client) sendRequest(request BlockchainIngestRequest) error {
 	var responseStatus string
 	defer func() {
 		if err != nil {
+			failedblockFilename := fmt.Sprintf("failed_block_%v.ndjson", request.BlockNumber)
 			c.log.Error("INGEST FAILED",
 				"blockNumber", request.BlockNumber,
 				"error", err,
 				"statusCode", responseStatus,
+				"failedBlockFilename", failedblockFilename,
 				"duration", time.Since(start),
+				"fileSaved", os.WriteFile(failedblockFilename, request.Payload, 0o644),
 			)
 		} else {
 			c.log.Info("BLOCK INGESTED",
@@ -120,7 +125,7 @@ func (c *client) sendRequest(request BlockchainIngestRequest) error {
 		}
 	}()
 
-	url := fmt.Sprintf("%s/beta/blockchain/%s/chain", c.cfg.URL, c.cfg.BlockchainName)
+	url := fmt.Sprintf("%s/api/beta/blockchain/%s/ingest", c.cfg.URL, c.cfg.BlockchainName)
 	req, err := retryablehttp.NewRequest("POST", url, bytes.NewReader(request.Payload))
 	if err != nil {
 		return err

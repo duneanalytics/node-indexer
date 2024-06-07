@@ -27,8 +27,8 @@ type BlockchainIngestResponse struct {
 
 type IngestedTableInfo struct {
 	Name  string `json:"name"`
-	Rows  int    `json:"rows"`
-	Bytes int    `json:"bytes"`
+	Rows  int    `json:"rows_written"`
+	Bytes int    `json:"bytes_written"`
 }
 
 func (b *BlockchainIngestResponse) String() string {
@@ -36,7 +36,7 @@ func (b *BlockchainIngestResponse) String() string {
 }
 
 type BlockchainIngestRequest struct {
-	BlockNumber    string
+	BlockNumber    int64
 	ContentType    string
 	EVMStack       string
 	IdempotencyKey string
