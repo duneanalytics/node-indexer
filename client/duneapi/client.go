@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"sync"
 	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/models"
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -28,10 +28,8 @@ type BlockchainIngester interface {
 }
 
 type client struct {
-	log *slog.Logger
-	// TODO: Use retryable client
-	// httpClient *retryablehttp.Client
-	httpClient *http.Client
+	log        *slog.Logger
+	httpClient *retryablehttp.Client
 	cfg        Config
 	compressor *zstd.Encoder
 	bufPool    *sync.Pool
@@ -44,16 +42,14 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Use retryable client
-	// httpClient := retryablehttp.NewClient()
-	// httpClient.RetryMax = MaxRetries
-	// httpClient.Logger = log
-	// httpClient.CheckRetry = retryablehttp.DefaultRetryPolicy
-	// httpClient.Backoff = retryablehttp.LinearJitterBackoff
+	httpClient := retryablehttp.NewClient()
+	httpClient.RetryMax = MaxRetries
+	httpClient.Logger = log
+	httpClient.CheckRetry = retryablehttp.DefaultRetryPolicy
+	httpClient.Backoff = retryablehttp.LinearJitterBackoff
 	return &client{
 		log:        log,
-		httpClient: &http.Client{},
-		// httpClient: httpClient,
+		httpClient: httpClient,
 		cfg:        cfg,
 		compressor: comp,
 		bufPool: &sync.Pool{
@@ -128,9 +124,7 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 
 	url := fmt.Sprintf("%s/beta/blockchain/%s/ingest", c.cfg.URL, c.cfg.BlockchainName)
 	c.log.Debug("Sending request", "url", url)
-	// TODO: Use retryable client
-	// req, err := retryablehttp.NewRequest("POST", url, bytes.NewReader(request.Payload))
-	req, err := http.NewRequest("POST", url, bytes.NewReader(request.Payload))
+	req, err := retryablehttp.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(request.Payload))
 	if err != nil {
 		return err
 	}
