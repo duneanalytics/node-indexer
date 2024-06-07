@@ -56,13 +56,17 @@ func (i *ingester) ConsumeBlocks(
 	dontStop := endBlockNumber <= startBlockNumber
 	latestBlockNumber := i.tryUpdateLatestBlockNumber()
 
-	waitForBlock := func(blockNumber, latestBlockNumber int64) int64 {
-		// TODO: handle cancellation here
+	waitForBlock := func(ctx context.Context, blockNumber, latestBlockNumber int64) int64 {
 		for blockNumber > latestBlockNumber {
 			i.log.Info(fmt.Sprintf("Waiting %v for block to be available..", i.cfg.PollInterval),
 				"blockNumber", blockNumber,
 				"latestBlockNumber", latestBlockNumber,
 			)
+			select {
+			case <-ctx.Done():
+				return latestBlockNumber
+			case <-time.After(i.cfg.PollInterval):
+			}
 			time.Sleep(i.cfg.PollInterval)
 			latestBlockNumber = i.tryUpdateLatestBlockNumber()
 		}
@@ -71,11 +75,15 @@ func (i *ingester) ConsumeBlocks(
 
 	for blockNumber := startBlockNumber; dontStop || blockNumber <= endBlockNumber; blockNumber++ {
 
-		latestBlockNumber = waitForBlock(blockNumber, latestBlockNumber)
+		latestBlockNumber = waitForBlock(ctx, blockNumber, latestBlockNumber)
 		startTime := time.Now()
 
 		block, err := i.node.BlockByNumber(ctx, blockNumber)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				i.log.Info("Context cancelled, stopping..")
+				return err
+			}
 			i.log.Error("Failed to get block by number, continuing..",
 				"blockNumber", blockNumber,
 				"latestBlockNumber", latestBlockNumber,
