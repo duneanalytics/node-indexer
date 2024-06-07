@@ -132,7 +132,7 @@ func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlo
 			if !ok {
 				return nil // channel closed
 			}
-			if err := i.dune.SendBlock(payload); err != nil {
+			if err := i.dune.SendBlock(ctx, payload); err != nil {
 				// TODO: implement DeadLetterQueue
 				// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
 				i.log.Error("SendBlock failed, continuing..", "blockNumber", payload.BlockNumber, "error", err)

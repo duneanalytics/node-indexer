@@ -109,7 +109,7 @@ func TestRunLoopBaseCase(t *testing.T) {
 	sentBlockNumber := int64(0)
 	producedBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
-		SendBlockFunc: func(block models.RPCBlock) error {
+		SendBlockFunc: func(_ context.Context, block models.RPCBlock) error {
 			atomic.StoreInt64(&sentBlockNumber, block.BlockNumber)
 			return nil
 		},
@@ -147,7 +147,7 @@ func TestRunLoopUntilCancel(t *testing.T) {
 	sentBlockNumber := int64(0)
 	producedBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
-		SendBlockFunc: func(block models.RPCBlock) error {
+		SendBlockFunc: func(_ context.Context, block models.RPCBlock) error {
 			atomic.StoreInt64(&sentBlockNumber, block.BlockNumber)
 			if block.BlockNumber == maxBlockNumber {
 				// cancel execution when we send the last block

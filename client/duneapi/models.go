@@ -36,7 +36,7 @@ func (b *BlockchainIngestResponse) String() string {
 }
 
 type BlockchainIngestRequest struct {
-	BlockNumber    string
+	BlockNumber    int64
 	ContentType    string
 	EVMStack       string
 	IdempotencyKey string
