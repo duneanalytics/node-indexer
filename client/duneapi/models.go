@@ -2,6 +2,7 @@ package duneapi
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/duneanalytics/blockchain-ingester/models"
 )
@@ -32,7 +33,10 @@ type IngestedTableInfo struct {
 }
 
 func (b *BlockchainIngestResponse) String() string {
-	return fmt.Sprintf("Ingested: %+v", b.Tables)
+	sort.Slice(b.Tables, func(i, j int) bool {
+		return b.Tables[i].Name < b.Tables[j].Name
+	})
+	return fmt.Sprintf("%+v", b.Tables)
 }
 
 type BlockchainIngestRequest struct {

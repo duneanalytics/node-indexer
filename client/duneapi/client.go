@@ -63,12 +63,8 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 // SendBlock sends a block to DuneAPI
 // TODO: support batching multiple blocks in a single request
 func (c *client) SendBlock(ctx context.Context, payload models.RPCBlock) error {
-	start := time.Now()
 	buffer := c.bufPool.Get().(*bytes.Buffer)
-	defer func() {
-		c.bufPool.Put(buffer)
-		c.log.Info("SendBlock", "payloadLength", len(payload.Payload), "duration", time.Since(start))
-	}()
+	defer c.bufPool.Put(buffer)
 
 	request, err := c.buildRequest(payload, buffer)
 	if err != nil {
@@ -110,12 +106,14 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 				"blockNumber", request.BlockNumber,
 				"error", err,
 				"statusCode", responseStatus,
+				"payloadSize", len(request.Payload),
 				"duration", time.Since(start),
 			)
 		} else {
-			c.log.Info("BLOCK INGESTED",
+			c.log.Info("BLOCK SENT",
 				"blockNumber", request.BlockNumber,
 				"response", response.String(),
+				"payloadSize", len(request.Payload),
 				"duration", time.Since(start),
 			)
 		}
