@@ -53,7 +53,7 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 	methodArgs := map[string][]any{
 		"eth_getBlockByNumber":     {blockNumberHex, true},
 		"eth_getBlockReceipts":     {blockNumberHex},
-		"debug_traceBlockByNumber": {blockNumberHex, `{"tracer":"callTracer"}`},
+		"debug_traceBlockByNumber": {blockNumberHex, map[string]string{"tracer": "callTracer"}},
 	}
 	group, ctx := errgroup.WithContext(ctx)
 	results := make([]*bytes.Buffer, len(methods))
@@ -83,7 +83,6 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 	for _, res := range results {
 		buffer.Grow(res.Len() + 1)
 		buffer.ReadFrom(res)
-		buffer.WriteString("\n")
 	}
 	return models.RPCBlock{
 		BlockNumber: blockNumber,

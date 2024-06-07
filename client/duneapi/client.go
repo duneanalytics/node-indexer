@@ -2,14 +2,15 @@ package duneapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/models"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -19,7 +20,7 @@ const (
 
 type BlockchainIngester interface {
 	// SendBlock sends a block to DuneAPI
-	SendBlock(payload models.RPCBlock) error
+	SendBlock(ctx context.Context, payload models.RPCBlock) error
 
 	// - API to discover the latest block number ingested
 	//   this can also provide "next block ranges" to push to DuneAPI
@@ -27,8 +28,10 @@ type BlockchainIngester interface {
 }
 
 type client struct {
-	log        *slog.Logger
-	httpClient *retryablehttp.Client
+	log *slog.Logger
+	// TODO: Use retryable client
+	// httpClient *retryablehttp.Client
+	httpClient *http.Client
 	cfg        Config
 	compressor *zstd.Encoder
 	bufPool    *sync.Pool
@@ -41,14 +44,16 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 	if err != nil {
 		return nil, err
 	}
-	httpClient := retryablehttp.NewClient()
-	httpClient.RetryMax = MaxRetries
-	httpClient.Logger = log
-	httpClient.CheckRetry = retryablehttp.DefaultRetryPolicy
-	httpClient.Backoff = retryablehttp.LinearJitterBackoff
+	// TODO: Use retryable client
+	// httpClient := retryablehttp.NewClient()
+	// httpClient.RetryMax = MaxRetries
+	// httpClient.Logger = log
+	// httpClient.CheckRetry = retryablehttp.DefaultRetryPolicy
+	// httpClient.Backoff = retryablehttp.LinearJitterBackoff
 	return &client{
 		log:        log,
-		httpClient: httpClient,
+		httpClient: &http.Client{},
+		// httpClient: httpClient,
 		cfg:        cfg,
 		compressor: comp,
 		bufPool: &sync.Pool{
@@ -61,7 +66,7 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 
 // SendBlock sends a block to DuneAPI
 // TODO: support batching multiple blocks in a single request
-func (c *client) SendBlock(payload models.RPCBlock) error {
+func (c *client) SendBlock(ctx context.Context, payload models.RPCBlock) error {
 	start := time.Now()
 	buffer := c.bufPool.Get().(*bytes.Buffer)
 	defer func() {
@@ -73,7 +78,7 @@ func (c *client) SendBlock(payload models.RPCBlock) error {
 	if err != nil {
 		return err
 	}
-	return c.sendRequest(request)
+	return c.sendRequest(ctx, request)
 }
 
 func (c *client) buildRequest(payload models.RPCBlock, buffer *bytes.Buffer) (BlockchainIngestRequest, error) {
@@ -92,12 +97,13 @@ func (c *client) buildRequest(payload models.RPCBlock, buffer *bytes.Buffer) (Bl
 		request.ContentType = "application/zstd"
 		request.Payload = buffer.Bytes()
 	}
+	request.BlockNumber = payload.BlockNumber
 	request.IdempotencyKey = c.idempotencyKey(payload)
 	request.EVMStack = c.cfg.Stack.String()
 	return request, nil
 }
 
-func (c *client) sendRequest(request BlockchainIngestRequest) error {
+func (c *client) sendRequest(ctx context.Context, request BlockchainIngestRequest) error {
 	// TODO: implement timeouts (context with deadline)
 	start := time.Now()
 	var err error
@@ -122,7 +128,9 @@ func (c *client) sendRequest(request BlockchainIngestRequest) error {
 
 	url := fmt.Sprintf("%s/beta/blockchain/%s/ingest", c.cfg.URL, c.cfg.BlockchainName)
 	c.log.Debug("Sending request", "url", url)
-	req, err := retryablehttp.NewRequest("POST", url, bytes.NewReader(request.Payload))
+	// TODO: Use retryable client
+	// req, err := retryablehttp.NewRequest("POST", url, bytes.NewReader(request.Payload))
+	req, err := http.NewRequest("POST", url, bytes.NewReader(request.Payload))
 	if err != nil {
 		return err
 	}
@@ -130,7 +138,7 @@ func (c *client) sendRequest(request BlockchainIngestRequest) error {
 	req.Header.Set("x-idempotency-key", request.IdempotencyKey)
 	req.Header.Set("x-dune-evm-stack", request.EVMStack)
 	req.Header.Set("x-dune-api-key", c.cfg.APIKey)
-
+	req = req.WithContext(ctx)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err

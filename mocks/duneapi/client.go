@@ -4,6 +4,7 @@
 package duneapi_mock
 
 import (
+	"context"
 	"github.com/duneanalytics/blockchain-ingester/client/duneapi"
 	"github.com/duneanalytics/blockchain-ingester/models"
 	"sync"
@@ -19,7 +20,7 @@ var _ duneapi.BlockchainIngester = &BlockchainIngesterMock{}
 //
 //		// make and configure a mocked duneapi.BlockchainIngester
 //		mockedBlockchainIngester := &BlockchainIngesterMock{
-//			SendBlockFunc: func(payload models.RPCBlock) error {
+//			SendBlockFunc: func(ctx context.Context, payload models.RPCBlock) error {
 //				panic("mock out the SendBlock method")
 //			},
 //		}
@@ -30,12 +31,14 @@ var _ duneapi.BlockchainIngester = &BlockchainIngesterMock{}
 //	}
 type BlockchainIngesterMock struct {
 	// SendBlockFunc mocks the SendBlock method.
-	SendBlockFunc func(payload models.RPCBlock) error
+	SendBlockFunc func(ctx context.Context, payload models.RPCBlock) error
 
 	// calls tracks calls to the methods.
 	calls struct {
 		// SendBlock holds details about calls to the SendBlock method.
 		SendBlock []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
 			// Payload is the payload argument value.
 			Payload models.RPCBlock
 		}
@@ -44,19 +47,21 @@ type BlockchainIngesterMock struct {
 }
 
 // SendBlock calls SendBlockFunc.
-func (mock *BlockchainIngesterMock) SendBlock(payload models.RPCBlock) error {
+func (mock *BlockchainIngesterMock) SendBlock(ctx context.Context, payload models.RPCBlock) error {
 	if mock.SendBlockFunc == nil {
 		panic("BlockchainIngesterMock.SendBlockFunc: method is nil but BlockchainIngester.SendBlock was just called")
 	}
 	callInfo := struct {
+		Ctx     context.Context
 		Payload models.RPCBlock
 	}{
+		Ctx:     ctx,
 		Payload: payload,
 	}
 	mock.lockSendBlock.Lock()
 	mock.calls.SendBlock = append(mock.calls.SendBlock, callInfo)
 	mock.lockSendBlock.Unlock()
-	return mock.SendBlockFunc(payload)
+	return mock.SendBlockFunc(ctx, payload)
 }
 
 // SendBlockCalls gets all the calls that were made to SendBlock.
@@ -64,9 +69,11 @@ func (mock *BlockchainIngesterMock) SendBlock(payload models.RPCBlock) error {
 //
 //	len(mockedBlockchainIngester.SendBlockCalls())
 func (mock *BlockchainIngesterMock) SendBlockCalls() []struct {
+	Ctx     context.Context
 	Payload models.RPCBlock
 } {
 	var calls []struct {
+		Ctx     context.Context
 		Payload models.RPCBlock
 	}
 	mock.lockSendBlock.RLock()
