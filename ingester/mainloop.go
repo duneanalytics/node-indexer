@@ -173,20 +173,32 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 		case tNow := <-timer.C:
 			latest := atomic.LoadInt64(&i.info.LatestBlockNumber)
 			lastIngested := atomic.LoadInt64(&i.info.IngestedBlockNumber)
-			lastConsumed := atomic.LoadInt64(&i.info.ConsumedBlockNumber)
 
 			blocksPerSec := float64(lastIngested-previousIngested) / tNow.Sub(previousTime).Seconds()
 			newDistance := latest - lastIngested
 			fallingBehind := newDistance > (previousDistance + 1) // TODO: make is more stable
 
-			i.log.Info("Info",
-				"FallingBehind", fallingBehind,
+			rpcErrors := len(i.info.RPCErrors)
+			duneErrors := len(i.info.DuneErrors)
+			fields := []interface{}{
 				"blocksPerSec", fmt.Sprintf("%.2f", blocksPerSec),
 				"latestBlockNumber", latest,
 				"ingestedBlockNumber", lastIngested,
-				"consumedBlockNumber", lastConsumed,
-				"distanceFromLatest", latest-lastIngested,
-			)
+			}
+			if fallingBehind {
+				fields = append(fields, "fallingBehind", fallingBehind)
+			}
+			if newDistance > 1 {
+				fields = append(fields, "distanceFromLatest", newDistance)
+			}
+			if rpcErrors > 0 {
+				fields = append(fields, "rpcErrors", rpcErrors)
+			}
+			if duneErrors > 0 {
+				fields = append(fields, "duneErrors", duneErrors)
+			}
+
+			i.log.Info("ProgressReport", fields...)
 			previousIngested = lastIngested
 			previousDistance = newDistance
 			previousTime = tNow
