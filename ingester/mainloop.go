@@ -56,29 +56,33 @@ func (i *ingester) ConsumeBlocks(
 	dontStop := endBlockNumber <= startBlockNumber
 	latestBlockNumber := i.tryUpdateLatestBlockNumber()
 
-	waitForBlock := func(blockNumber, latestBlockNumber int64) int64 {
+	waitForBlock := func(ctx context.Context, blockNumber, latestBlockNumber int64) int64 {
 		for blockNumber > latestBlockNumber {
 			select {
 			case <-ctx.Done():
 				return latestBlockNumber
-			default:
+			case <-time.After(i.cfg.PollInterval):
 			}
-			i.log.Info(fmt.Sprintf("Waiting %v for block to be available..", i.cfg.PollInterval),
+			i.log.Debug(fmt.Sprintf("Waiting %v for block to be available..", i.cfg.PollInterval),
 				"blockNumber", blockNumber,
 				"latestBlockNumber", latestBlockNumber,
 			)
-			time.Sleep(i.cfg.PollInterval)
 			latestBlockNumber = i.tryUpdateLatestBlockNumber()
 		}
 		return latestBlockNumber
 	}
 
 	for blockNumber := startBlockNumber; dontStop || blockNumber <= endBlockNumber; blockNumber++ {
-		latestBlockNumber = waitForBlock(blockNumber, latestBlockNumber)
+		latestBlockNumber = waitForBlock(ctx, blockNumber, latestBlockNumber)
 		startTime := time.Now()
 
 		block, err := i.node.BlockByNumber(ctx, blockNumber)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				i.log.Info("Context canceled, stopping..")
+				return err
+			}
+
 			i.log.Error("Failed to get block by number, continuing..",
 				"blockNumber", blockNumber,
 				"latestBlockNumber", latestBlockNumber,
@@ -89,10 +93,6 @@ func (i *ingester) ConsumeBlocks(
 				BlockNumber: blockNumber,
 				Error:       err,
 			})
-
-			if errors.Is(err, context.Canceled) {
-				return err
-			}
 
 			// TODO: should I sleep (backoff) here?
 			continue
@@ -159,7 +159,7 @@ func (i *ingester) tryUpdateLatestBlockNumber() int64 {
 }
 
 func (i *ingester) ReportProgress(ctx context.Context) error {
-	timer := time.NewTicker(20 * time.Second)
+	timer := time.NewTicker(i.cfg.ReportProgressInterval)
 	defer timer.Stop()
 
 	previousTime := time.Now()
@@ -173,20 +173,32 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 		case tNow := <-timer.C:
 			latest := atomic.LoadInt64(&i.info.LatestBlockNumber)
 			lastIngested := atomic.LoadInt64(&i.info.IngestedBlockNumber)
-			lastConsumed := atomic.LoadInt64(&i.info.ConsumedBlockNumber)
 
 			blocksPerSec := float64(lastIngested-previousIngested) / tNow.Sub(previousTime).Seconds()
 			newDistance := latest - lastIngested
 			fallingBehind := newDistance > (previousDistance + 1) // TODO: make is more stable
 
-			i.log.Info("Info",
+			rpcErrors := len(i.info.RPCErrors)
+			duneErrors := len(i.info.DuneErrors)
+			fields := []interface{}{
+				"blocksPerSec", fmt.Sprintf("%.2f", blocksPerSec),
 				"latestBlockNumber", latest,
 				"ingestedBlockNumber", lastIngested,
-				"consumedBlockNumber", lastConsumed,
-				"distanceFromLatest", latest-lastIngested,
-				"FallingBehind", fallingBehind,
-				"blocksPerSec", fmt.Sprintf("%.2f", blocksPerSec),
-			)
+			}
+			if fallingBehind {
+				fields = append(fields, "fallingBehind", fallingBehind)
+			}
+			if newDistance > 1 {
+				fields = append(fields, "distanceFromLatest", newDistance)
+			}
+			if rpcErrors > 0 {
+				fields = append(fields, "rpcErrors", rpcErrors)
+			}
+			if duneErrors > 0 {
+				fields = append(fields, "duneErrors", duneErrors)
+			}
+
+			i.log.Info("ProgressReport", fields...)
 			previousIngested = lastIngested
 			previousDistance = newDistance
 			previousTime = tNow

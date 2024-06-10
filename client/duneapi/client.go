@@ -48,7 +48,7 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 	httpClient.CheckRetry = retryablehttp.DefaultRetryPolicy
 	httpClient.Backoff = retryablehttp.LinearJitterBackoff
 	return &client{
-		log:        log,
+		log:        log.With("module", "duneapi"),
 		httpClient: httpClient,
 		cfg:        cfg,
 		compressor: comp,
@@ -63,12 +63,8 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 // SendBlock sends a block to DuneAPI
 // TODO: support batching multiple blocks in a single request
 func (c *client) SendBlock(ctx context.Context, payload models.RPCBlock) error {
-	start := time.Now()
 	buffer := c.bufPool.Get().(*bytes.Buffer)
-	defer func() {
-		c.bufPool.Put(buffer)
-		c.log.Info("SendBlock", "payloadLength", len(payload.Payload), "duration", time.Since(start))
-	}()
+	defer c.bufPool.Put(buffer)
 
 	request, err := c.buildRequest(payload, buffer)
 	if err != nil {
@@ -82,7 +78,6 @@ func (c *client) buildRequest(payload models.RPCBlock, buffer *bytes.Buffer) (Bl
 
 	if c.cfg.DisableCompression {
 		request.Payload = payload.Payload
-		request.ContentType = "application/x-ndjson"
 	} else {
 		buffer.Reset()
 		c.compressor.Reset(buffer)
@@ -90,7 +85,7 @@ func (c *client) buildRequest(payload models.RPCBlock, buffer *bytes.Buffer) (Bl
 		if err != nil {
 			return request, err
 		}
-		request.ContentType = "application/zstd"
+		request.ContentEncoding = "application/zstd"
 		request.Payload = buffer.Bytes()
 	}
 	request.BlockNumber = payload.BlockNumber
@@ -111,24 +106,29 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 				"blockNumber", request.BlockNumber,
 				"error", err,
 				"statusCode", responseStatus,
+				"payloadSize", len(request.Payload),
 				"duration", time.Since(start),
 			)
 		} else {
-			c.log.Info("BLOCK INGESTED",
+			c.log.Info("BLOCK SENT",
 				"blockNumber", request.BlockNumber,
 				"response", response.String(),
+				"payloadSize", len(request.Payload),
 				"duration", time.Since(start),
 			)
 		}
 	}()
 
-	url := fmt.Sprintf("%s/beta/blockchain/%s/ingest", c.cfg.URL, c.cfg.BlockchainName)
+	url := fmt.Sprintf("%s/api/beta/blockchain/%s/ingest", c.cfg.URL, c.cfg.BlockchainName)
 	c.log.Debug("Sending request", "url", url)
 	req, err := retryablehttp.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(request.Payload))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", request.ContentType)
+	if request.ContentEncoding != "" {
+		req.Header.Set("Content-Encoding", request.ContentEncoding)
+	}
+	req.Header.Set("Content-Type", "application/x-ndjson")
 	req.Header.Set("x-idempotency-key", request.IdempotencyKey)
 	req.Header.Set("x-dune-evm-stack", request.EVMStack)
 	req.Header.Set("x-dune-api-key", c.cfg.APIKey)

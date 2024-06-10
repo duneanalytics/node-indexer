@@ -30,11 +30,16 @@ type Ingester interface {
 	Info() Info
 }
 
-const defaultMaxBatchSize = 1
+const (
+	defaultMaxBatchSize           = 1
+	defaultPollInterval           = 1 * time.Second
+	defaultReportProgressInterval = 30 * time.Second
+)
 
 type Config struct {
-	MaxBatchSize int
-	PollInterval time.Duration
+	MaxBatchSize           int
+	PollInterval           time.Duration
+	ReportProgressInterval time.Duration
 }
 
 type Info struct {
@@ -61,7 +66,7 @@ type ingester struct {
 
 func New(log *slog.Logger, node jsonrpc.BlockchainClient, dune duneapi.BlockchainIngester, cfg Config) Ingester {
 	ing := &ingester{
-		log:  log,
+		log:  log.With("module", "ingester"),
 		node: node,
 		dune: dune,
 		cfg:  cfg,
@@ -73,9 +78,15 @@ func New(log *slog.Logger, node jsonrpc.BlockchainClient, dune duneapi.Blockchai
 	if ing.cfg.MaxBatchSize == 0 {
 		ing.cfg.MaxBatchSize = defaultMaxBatchSize
 	}
+	if ing.cfg.PollInterval == 0 {
+		ing.cfg.PollInterval = defaultPollInterval
+	}
+	if ing.cfg.ReportProgressInterval == 0 {
+		ing.cfg.ReportProgressInterval = defaultReportProgressInterval
+	}
 	return ing
 }
 
 func (i *ingester) Info() Info {
-	return Info{}
+	return i.info
 }
