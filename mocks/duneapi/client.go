@@ -20,6 +20,12 @@ var _ duneapi.BlockchainIngester = &BlockchainIngesterMock{}
 //
 //		// make and configure a mocked duneapi.BlockchainIngester
 //		mockedBlockchainIngester := &BlockchainIngesterMock{
+//			GetProgressReportFunc: func(ctx context.Context) (*models.BlockchainIndexProgress, error) {
+//				panic("mock out the GetProgressReport method")
+//			},
+//			PostProgressReportFunc: func(ctx context.Context, progress models.BlockchainIndexProgress) error {
+//				panic("mock out the PostProgressReport method")
+//			},
 //			SendBlockFunc: func(ctx context.Context, payload models.RPCBlock) error {
 //				panic("mock out the SendBlock method")
 //			},
@@ -30,11 +36,29 @@ var _ duneapi.BlockchainIngester = &BlockchainIngesterMock{}
 //
 //	}
 type BlockchainIngesterMock struct {
+	// GetProgressReportFunc mocks the GetProgressReport method.
+	GetProgressReportFunc func(ctx context.Context) (*models.BlockchainIndexProgress, error)
+
+	// PostProgressReportFunc mocks the PostProgressReport method.
+	PostProgressReportFunc func(ctx context.Context, progress models.BlockchainIndexProgress) error
+
 	// SendBlockFunc mocks the SendBlock method.
 	SendBlockFunc func(ctx context.Context, payload models.RPCBlock) error
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// GetProgressReport holds details about calls to the GetProgressReport method.
+		GetProgressReport []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+		}
+		// PostProgressReport holds details about calls to the PostProgressReport method.
+		PostProgressReport []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Progress is the progress argument value.
+			Progress models.BlockchainIndexProgress
+		}
 		// SendBlock holds details about calls to the SendBlock method.
 		SendBlock []struct {
 			// Ctx is the ctx argument value.
@@ -43,7 +67,77 @@ type BlockchainIngesterMock struct {
 			Payload models.RPCBlock
 		}
 	}
-	lockSendBlock sync.RWMutex
+	lockGetProgressReport  sync.RWMutex
+	lockPostProgressReport sync.RWMutex
+	lockSendBlock          sync.RWMutex
+}
+
+// GetProgressReport calls GetProgressReportFunc.
+func (mock *BlockchainIngesterMock) GetProgressReport(ctx context.Context) (*models.BlockchainIndexProgress, error) {
+	if mock.GetProgressReportFunc == nil {
+		panic("BlockchainIngesterMock.GetProgressReportFunc: method is nil but BlockchainIngester.GetProgressReport was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+	}{
+		Ctx: ctx,
+	}
+	mock.lockGetProgressReport.Lock()
+	mock.calls.GetProgressReport = append(mock.calls.GetProgressReport, callInfo)
+	mock.lockGetProgressReport.Unlock()
+	return mock.GetProgressReportFunc(ctx)
+}
+
+// GetProgressReportCalls gets all the calls that were made to GetProgressReport.
+// Check the length with:
+//
+//	len(mockedBlockchainIngester.GetProgressReportCalls())
+func (mock *BlockchainIngesterMock) GetProgressReportCalls() []struct {
+	Ctx context.Context
+} {
+	var calls []struct {
+		Ctx context.Context
+	}
+	mock.lockGetProgressReport.RLock()
+	calls = mock.calls.GetProgressReport
+	mock.lockGetProgressReport.RUnlock()
+	return calls
+}
+
+// PostProgressReport calls PostProgressReportFunc.
+func (mock *BlockchainIngesterMock) PostProgressReport(ctx context.Context, progress models.BlockchainIndexProgress) error {
+	if mock.PostProgressReportFunc == nil {
+		panic("BlockchainIngesterMock.PostProgressReportFunc: method is nil but BlockchainIngester.PostProgressReport was just called")
+	}
+	callInfo := struct {
+		Ctx      context.Context
+		Progress models.BlockchainIndexProgress
+	}{
+		Ctx:      ctx,
+		Progress: progress,
+	}
+	mock.lockPostProgressReport.Lock()
+	mock.calls.PostProgressReport = append(mock.calls.PostProgressReport, callInfo)
+	mock.lockPostProgressReport.Unlock()
+	return mock.PostProgressReportFunc(ctx, progress)
+}
+
+// PostProgressReportCalls gets all the calls that were made to PostProgressReport.
+// Check the length with:
+//
+//	len(mockedBlockchainIngester.PostProgressReportCalls())
+func (mock *BlockchainIngesterMock) PostProgressReportCalls() []struct {
+	Ctx      context.Context
+	Progress models.BlockchainIndexProgress
+} {
+	var calls []struct {
+		Ctx      context.Context
+		Progress models.BlockchainIndexProgress
+	}
+	mock.lockPostProgressReport.RLock()
+	calls = mock.calls.PostProgressReport
+	mock.lockPostProgressReport.RUnlock()
+	return calls
 }
 
 // SendBlock calls SendBlockFunc.

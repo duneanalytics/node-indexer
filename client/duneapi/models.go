@@ -46,3 +46,16 @@ type BlockchainIngestRequest struct {
 	IdempotencyKey  string
 	Payload         []byte
 }
+
+type BlockchainProgress struct {
+	LastIngestedBlockNumber int64 `json:"last_ingested_block_number"`
+	LatestBlockNumber       int64 `json:"latest_block_number"`
+}
+
+func (p *BlockchainProgress) String() string {
+	return fmt.Sprintf("%+v", *p)
+}
+
+type errorResponse struct {
+	Error string `json:"error"`
+}

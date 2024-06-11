@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
@@ -21,6 +23,12 @@ const (
 type BlockchainIngester interface {
 	// SendBlock sends a block to DuneAPI
 	SendBlock(ctx context.Context, payload models.RPCBlock) error
+
+	// GetProgressReport gets a progress report from DuneAPI
+	GetProgressReport(ctx context.Context) (*models.BlockchainIndexProgress, error)
+
+	// PostProgressReport sends a progress report to DuneAPI
+	PostProgressReport(ctx context.Context, progress models.BlockchainIndexProgress) error
 
 	// - API to discover the latest block number ingested
 	//   this can also provide "next block ranges" to push to DuneAPI
@@ -154,4 +162,136 @@ func (c *client) idempotencyKey(rpcBlock models.RPCBlock) string {
 
 func (c *client) Close() error {
 	return c.compressor.Close()
+}
+
+func (c *client) PostProgressReport(ctx context.Context, progress models.BlockchainIndexProgress) error {
+	var request BlockchainProgress
+	var err error
+	var responseStatus string
+	var responseBody string
+	start := time.Now()
+
+	// Log response
+	defer func() {
+		if err != nil {
+			c.log.Error("Sending progress report failed",
+				"lastIngestedBlockNumer", request.LastIngestedBlockNumber,
+				"error", err,
+				"statusCode", responseStatus,
+				"duration", time.Since(start),
+				"responseBody", responseBody,
+			)
+		} else {
+			c.log.Info("Sent progress report",
+				"lastIngestedBlockNumer", request.LastIngestedBlockNumber,
+				"duration", time.Since(start),
+			)
+		}
+	}()
+
+	url := fmt.Sprintf("%s/api/beta/blockchain/%s/ingest/progress", c.cfg.URL, c.cfg.BlockchainName)
+	c.log.Debug("Sending request", "url", url)
+	payload, err := json.Marshal(progress)
+	if err != nil {
+		return err
+	}
+	req, err := retryablehttp.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-dune-api-key", c.cfg.APIKey)
+	req = req.WithContext(ctx)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	responseStatus = resp.Status
+
+	if resp.StatusCode != http.StatusOK {
+		bs, err := io.ReadAll(resp.Body)
+		responseBody = string(bs)
+		if err != nil {
+			return err
+		}
+		err = fmt.Errorf("got non-OK response, status code: %s body: %s", responseStatus, responseBody)
+		return err
+	}
+
+	return nil
+}
+
+func (c *client) GetProgressReport(ctx context.Context) (*models.BlockchainIndexProgress, error) {
+	var response BlockchainProgress
+	var err error
+	var responseStatus string
+	start := time.Now()
+
+	// Log response
+	defer func() {
+		if err != nil {
+			c.log.Error("Getting progress report failed",
+				"error", err,
+				"statusCode", responseStatus,
+				"duration", time.Since(start),
+			)
+		} else {
+			c.log.Info("Got progress report",
+				"progress", response.String(),
+				"duration", time.Since(start),
+			)
+		}
+	}()
+
+	url := fmt.Sprintf("%s/api/beta/blockchain/%s/ingest/progress", c.cfg.URL, c.cfg.BlockchainName)
+	c.log.Debug("Sending request", "url", url)
+	req, err := retryablehttp.NewRequestWithContext(ctx, "GET", url, nil) // empty body
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-dune-api-key", c.cfg.APIKey)
+	req = req.WithContext(ctx)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var errorResp errorResponse
+		err = json.Unmarshal(responseBody, &errorResp)
+		if err != nil {
+			return nil, err
+		}
+		err = fmt.Errorf("got non-OK response, status code: %d, body: '%s'", resp.StatusCode, errorResp.Error)
+		// No progress yet
+		if resp.StatusCode == http.StatusNotFound {
+			return &models.BlockchainIndexProgress{
+				BlockchainName:          c.cfg.BlockchainName,
+				EVMStack:                c.cfg.Stack.String(),
+				LastIngestedBlockNumber: 0,
+				LatestBlockNumber:       0,
+			}, nil
+		}
+		return nil, err
+	}
+
+	err = json.Unmarshal(responseBody, &response)
+	if err != nil {
+		return nil, err
+	}
+
+	progress := &models.BlockchainIndexProgress{
+		BlockchainName:          c.cfg.BlockchainName,
+		EVMStack:                c.cfg.Stack.String(),
+		LastIngestedBlockNumber: response.LastIngestedBlockNumber,
+		LatestBlockNumber:       response.LatestBlockNumber,
+	}
+	return progress, nil
 }
