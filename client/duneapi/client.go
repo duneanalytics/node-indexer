@@ -129,7 +129,7 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 		req.Header.Set("Content-Encoding", request.ContentEncoding)
 	}
 	req.Header.Set("Content-Type", "application/x-ndjson")
-	req.Header.Set("x-idempotency-key", request.IdempotencyKey)
+	req.Header.Set("idempotency-key", request.IdempotencyKey)
 	req.Header.Set("x-dune-evm-stack", request.EVMStack)
 	req.Header.Set("x-dune-api-key", c.cfg.APIKey)
 	req = req.WithContext(ctx)

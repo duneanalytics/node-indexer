@@ -11,18 +11,20 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func (i *ingester) Run(ctx context.Context, startBlockNumber, maxCount int64) error {
+func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int64) error {
 	inFlightChan := make(chan models.RPCBlock, i.cfg.MaxBatchSize)
-	defer close(inFlightChan)
 
-	var err error
+	blockChan := make(chan int64, i.cfg.MaxBatchSize)
 
-	if startBlockNumber < 0 {
-		startBlockNumber, err = i.node.LatestBlockNumber()
-		if err != nil {
-			return errors.Errorf("failed to get latest block number: %w", err)
-		}
-	}
+	// var err error
+
+	// TODO: Use progress endpoint
+	// TODO: Fetch blocks in parallel
+
+	i.tryUpdateLatestBlockNumber()
+	i.log.Info("Got latest block number", "latestBlockNumber", i.info.LatestBlockNumber)
+
+	// endBlockNumber := startBlockNumber+maxCount
 
 	i.log.Info("Starting ingester",
 		"maxBatchSize", i.cfg.MaxBatchSize,
@@ -32,7 +34,12 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber, maxCount int64) er
 
 	errGroup, ctx := errgroup.WithContext(ctx)
 	errGroup.Go(func() error {
-		return i.ConsumeBlocks(ctx, inFlightChan, startBlockNumber, startBlockNumber+maxCount)
+		defer close(blockChan)
+		return i.ProduceBlockNumbers(ctx, blockChan, startBlockNumber, startBlockNumber+maxCount)
+	})
+	errGroup.Go(func() error {
+		defer close(inFlightChan)
+		return i.ConsumeBlocks(ctx, blockChan, inFlightChan)
 	})
 	errGroup.Go(func() error {
 		return i.SendBlocks(ctx, inFlightChan)
@@ -41,9 +48,35 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber, maxCount int64) er
 		return i.ReportProgress(ctx)
 	})
 
+	fmt.Println("waiting")
 	if err := errGroup.Wait(); err != nil && err != ErrFinishedConsumeBlocks {
+		fmt.Println("errro in wait")
 		return err
 	}
+	fmt.Println("exiting run")
+	return nil
+}
+
+// ProduceBlockNumbers on a channel
+func (i *ingester) ProduceBlockNumbers(ctx context.Context, outChan chan int64, startBlockNumber, endBlockNumber int64) error {
+	blockNumber := startBlockNumber
+
+	fmt.Println("starting produce", startBlockNumber, endBlockNumber)
+
+	// TODO: Update latest block number if we're caught up
+
+	for blockNumber < i.info.LatestBlockNumber && blockNumber <= endBlockNumber {
+		// i.log.Info("Attempting to produce block number", "blockNumber", blockNumber)
+		fmt.Println("lol")
+		select {
+		case <-ctx.Done():
+			return nil
+		case outChan <- blockNumber:
+			i.log.Info("Produced block number", "blockNumber", blockNumber)
+			blockNumber++
+		}
+	}
+	fmt.Println("exiting produce")
 	return nil
 }
 
@@ -51,88 +84,90 @@ var ErrFinishedConsumeBlocks = errors.New("finished ConsumeBlocks")
 
 // ConsumeBlocks from the NPC Node
 func (i *ingester) ConsumeBlocks(
-	ctx context.Context, outChan chan models.RPCBlock, startBlockNumber, endBlockNumber int64,
+	ctx context.Context, blockNumbers chan int64, blocks chan models.RPCBlock,
 ) error {
-	dontStop := endBlockNumber <= startBlockNumber
-	latestBlockNumber := i.tryUpdateLatestBlockNumber()
-
-	waitForBlock := func(ctx context.Context, blockNumber, latestBlockNumber int64) int64 {
-		for blockNumber > latestBlockNumber {
-			select {
-			case <-ctx.Done():
-				return latestBlockNumber
-			case <-time.After(i.cfg.PollInterval):
-			}
-			i.log.Debug(fmt.Sprintf("Waiting %v for block to be available..", i.cfg.PollInterval),
-				"blockNumber", blockNumber,
-				"latestBlockNumber", latestBlockNumber,
-			)
-			latestBlockNumber = i.tryUpdateLatestBlockNumber()
-		}
-		return latestBlockNumber
-	}
-
-	for blockNumber := startBlockNumber; dontStop || blockNumber <= endBlockNumber; blockNumber++ {
-		latestBlockNumber = waitForBlock(ctx, blockNumber, latestBlockNumber)
-		startTime := time.Now()
-
-		block, err := i.node.BlockByNumber(ctx, blockNumber)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				i.log.Info("Context canceled, stopping..")
-				return err
-			}
-
-			i.log.Error("Failed to get block by number, continuing..",
-				"blockNumber", blockNumber,
-				"latestBlockNumber", latestBlockNumber,
-				"error", err,
-			)
-			i.info.RPCErrors = append(i.info.RPCErrors, ErrorInfo{
-				Timestamp:   time.Now(),
-				BlockNumber: blockNumber,
-				Error:       err,
-			})
-
-			// TODO: should I sleep (backoff) here?
-			continue
-		}
-
-		atomic.StoreInt64(&i.info.ConsumedBlockNumber, block.BlockNumber)
-		getBlockElapsed := time.Since(startTime)
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case outChan <- block:
-		}
-
-		distanceFromLatest := latestBlockNumber - block.BlockNumber
-		if distanceFromLatest > 0 {
-			// TODO: improve logs of processing speed and catchup estimated ETA
-			i.log.Info("We're behind, trying to catch up..",
-				"blockNumber", block.BlockNumber,
-				"latestBlockNumber", latestBlockNumber,
-				"distanceFromLatest", distanceFromLatest,
-				"getBlockElapsedMillis", getBlockElapsed.Milliseconds(),
-				"elapsedMillis", time.Since(startTime).Milliseconds(),
-			)
-		}
-	}
-	return ErrFinishedConsumeBlocks // FIXME: this is wrong
-}
-
-func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlock) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil // context canceled
-		case payload, ok := <-blocksCh:
-			// TODO: we should batch RCP blocks here before sending to Dune.
+		case blockNumber, ok := <-blockNumbers:
+			fmt.Println("got block number", blockNumber)
+			// TODO: we should batch RPC blocks here before sending to Dune.
 			if !ok {
+				fmt.Println("channel was closed")
+				fmt.Println("exiting consume")
 				return nil // channel closed
 			}
-			if err := i.dune.SendBlock(ctx, payload); err != nil {
+			i.log.Info("Got block number", "blockNumber", blockNumber)
+			startTime := time.Now()
+			block, err := i.node.BlockByNumber(ctx, blockNumber)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					i.log.Info("Context canceled, stopping..")
+					fmt.Println("exiting consume")
+					return err
+				}
+
+				i.log.Error("Failed to get block by number, continuing..",
+					"blockNumber", blockNumber,
+					"latestBlockNumber", i.info.LatestBlockNumber,
+					"error", err,
+				)
+				i.info.RPCErrors = append(i.info.RPCErrors, ErrorInfo{
+					Timestamp:   time.Now(),
+					BlockNumber: blockNumber,
+					Error:       err,
+				})
+
+				i.log.Info("Waiting for block number", "blockNumber", blockNumber)
+				continue
+			}
+
+			atomic.StoreInt64(&i.info.ConsumedBlockNumber, block.BlockNumber)
+			getBlockElapsed := time.Since(startTime)
+
+			// Send block
+			select {
+			case <-ctx.Done():
+				fmt.Println("exiting consume ctx err")
+				return ctx.Err()
+			case blocks <- block:
+			}
+
+			distanceFromLatest := i.info.LatestBlockNumber - block.BlockNumber
+			if distanceFromLatest > 0 {
+				// TODO: improve logs of processing speed and catchup estimated ETA
+				i.log.Info("We're behind, trying to catch up..",
+					"blockNumber", block.BlockNumber,
+					"latestBlockNumber", i.info.LatestBlockNumber,
+					"distanceFromLatest", distanceFromLatest,
+					"getBlockElapsedMillis", getBlockElapsed.Milliseconds(),
+					"elapsedMillis", time.Since(startTime).Milliseconds(),
+				)
+			}
+			i.log.Info("Waiting for block number", "blockNumber", blockNumber)
+		}
+	}
+}
+
+func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlock) error {
+	for {
+		fmt.Println("Hello")
+		select {
+		case _, ok := <-ctx.Done():
+			fmt.Println("ctx done, exiting send", ok)
+			return nil // context canceled
+		case payload, ok := <-blocksCh:
+			// TODO: we should batch RPC blocks here before sending to Dune.
+			if !ok {
+				fmt.Println("sendblocks: channel closedd")
+				fmt.Println("exiting send")
+				return nil // channel closed
+			}
+			fmt.Println("sending block", payload.BlockNumber)
+			err := i.dune.SendBlock(ctx, payload)
+			if err != nil {
+				fmt.Println("got block err")
 				// TODO: implement DeadLetterQueue
 				// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
 				i.log.Error("SendBlock failed, continuing..", "blockNumber", payload.BlockNumber, "error", err)
@@ -144,6 +179,7 @@ func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlo
 			} else {
 				atomic.StoreInt64(&i.info.IngestedBlockNumber, payload.BlockNumber)
 			}
+			fmt.Printf("got result %v\n", err)
 		}
 	}
 }
@@ -167,8 +203,13 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 	previousIngested := atomic.LoadInt64(&i.info.IngestedBlockNumber)
 
 	for {
+		if ctx.Err() != nil {
+			fmt.Println("exiting report progress ctx err")
+			return ctx.Err()
+		}
 		select {
-		case <-ctx.Done():
+		case _, ok := <-ctx.Done():
+			fmt.Println("exiting report progress", ok)
 			return nil
 		case tNow := <-timer.C:
 			latest := atomic.LoadInt64(&i.info.LatestBlockNumber)

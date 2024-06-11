@@ -14,10 +14,13 @@ type Ingester interface {
 	// Run starts the ingester and blocks until the context is cancelled or maxCount blocks are ingested
 	Run(ctx context.Context, startBlockNumber, maxCount int64) error
 
+	// TODO
+	ProduceBlockNumbers(ctx context.Context, outChan chan int64, startBlockNumber, endBlockNumber int64) error
+
 	// ConsumeBlocks sends blocks from startBlockNumber to endBlockNumber to outChan, inclusive.
 	// If endBlockNumber is -1, it sends blocks from startBlockNumber to the tip of the chain
 	// it will run continuously until the context is cancelled
-	ConsumeBlocks(ctx context.Context, outChan chan models.RPCBlock, startBlockNumber, endBlockNumber int64) error
+	ConsumeBlocks(ctx context.Context, inChan chan int64, outChan chan models.RPCBlock) error
 
 	// SendBlocks pushes to DuneAPI the RPCBlock Payloads as they are received in an endless loop
 	// it will block until:
