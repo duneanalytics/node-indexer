@@ -68,16 +68,21 @@ func TestBlockConsumptionLoopErrors(t *testing.T) {
 						Payload:     []byte(`block`),
 					}, nil
 				},
+				CloseFunc: func() error {
+					return nil
+				},
 			}
-			ing := ingester.New(slog.New(slog.NewTextHandler(io.Discard, nil)), rpcClient, nil, ingester.Config{
+			// Swap these to see logs
+			// logOutput := os.Stderr
+			logOutput := io.Discard
+			ing := ingester.New(slog.New(slog.NewTextHandler(logOutput, nil)), rpcClient, nil, ingester.Config{
 				MaxBatchSize: 1,
 				PollInterval: 1000 * time.Millisecond,
 			})
 
 			outCh := make(chan models.RPCBlock, maxBlockNumber+1)
-			defer close(outCh)
 			err := ing.ConsumeBlocks(ctx, outCh, 0, maxBlockNumber)
-			require.Error(t, err) // this is expected
+			require.ErrorIs(t, err, ingester.ErrFinishedConsumeBlocks)
 			if tc.BlockByNumberIsBroken {
 				require.Equal(t, producedBlockNumber, int64(0))
 			}
@@ -100,50 +105,75 @@ func TestBlockSendingLoop(t *testing.T) {
 
 func TestRunLoopBaseCase(t *testing.T) {
 	testCases := []struct {
-		name string
-		i    int64
+		name             string
+		maxCount         int64
+		lastIngested     int64
+		expectedEndBlock int64
 	}{
-		{name: "1 block", i: 1},
-		{name: "100 blocks", i: 100},
-	}
-	sentBlockNumber := int64(0)
-	producedBlockNumber := int64(0)
-	duneapi := &duneapi_mock.BlockchainIngesterMock{
-		SendBlockFunc: func(_ context.Context, block models.RPCBlock) error {
-			atomic.StoreInt64(&sentBlockNumber, block.BlockNumber)
-			return nil
-		},
-	}
-	rpcClient := &jsonrpc_mock.BlockchainClientMock{
-		LatestBlockNumberFunc: func() (int64, error) {
-			return 1000, nil
-		},
-		BlockByNumberFunc: func(_ context.Context, blockNumber int64) (models.RPCBlock, error) {
-			atomic.StoreInt64(&producedBlockNumber, blockNumber)
-			return models.RPCBlock{
-				BlockNumber: blockNumber,
-				Payload:     []byte(`block`),
-			}, nil
-		},
+		{name: "1 block", maxCount: 1, lastIngested: 0, expectedEndBlock: 1},
+		{name: "2 blocks", maxCount: 2, lastIngested: 0, expectedEndBlock: 2},
+		{name: "100 blocks", maxCount: 100, lastIngested: 0, expectedEndBlock: 100},
+		{name: "100 blocks, starting from 50", maxCount: 100, lastIngested: 50, expectedEndBlock: 150},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ing := ingester.New(slog.New(slog.NewTextHandler(io.Discard, nil)), rpcClient, duneapi, ingester.Config{
-				MaxBatchSize: 1,
-				PollInterval: 1000 * time.Millisecond,
-			})
+			latestBlockNumber := int64(1000)
+			ingestedBlockNumber := int64(0)
 
-			err := ing.Run(context.Background(), 0, tc.i)
-			require.NoError(t, err)
-			require.Equal(t, producedBlockNumber, tc.i)
-			require.Equal(t, sentBlockNumber, tc.i)
+			rpcClient := &jsonrpc_mock.BlockchainClientMock{
+				LatestBlockNumberFunc: func() (int64, error) {
+					return latestBlockNumber, nil
+				},
+				BlockByNumberFunc: func(_ context.Context, blockNumber int64) (models.RPCBlock, error) {
+					atomic.StoreInt64(&latestBlockNumber, blockNumber)
+					return models.RPCBlock{
+						BlockNumber: blockNumber,
+						Payload:     []byte(`block`),
+					}, nil
+				},
+				CloseFunc: func() error {
+					return nil
+				},
+			}
+
+			duneapi := &duneapi_mock.BlockchainIngesterMock{
+				SendBlockFunc: func(_ context.Context, block models.RPCBlock) error {
+					atomic.StoreInt64(&ingestedBlockNumber, block.BlockNumber)
+					return nil
+				},
+				PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
+					return nil
+				},
+			}
+
+			// Swap these to see logs
+			// logOutput := os.Stderr
+			logOutput := io.Discard
+			ing := ingester.New(
+				slog.New(slog.NewTextHandler(logOutput, nil)),
+				rpcClient,
+				duneapi,
+				ingester.Config{
+					MaxBatchSize: 1,
+					PollInterval: 1000 * time.Millisecond,
+				},
+			)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			startBlockNumber := tc.lastIngested + 1
+			err := ing.Run(ctx, startBlockNumber, tc.maxCount)
+			require.ErrorIs(t, err, ingester.ErrFinishedConsumeBlocks)
+			// require.Equal(t, tc.lastIngested+tc.maxCount, producedBlockNumber)
+			require.Equal(t, tc.expectedEndBlock, atomic.LoadInt64(&ingestedBlockNumber))
 		})
 	}
 }
 
 func TestRunLoopUntilCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	maxBlockNumber := int64(1000)
+	maxBlockNumber := int64(10)
 	sentBlockNumber := int64(0)
 	producedBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
@@ -152,7 +182,11 @@ func TestRunLoopUntilCancel(t *testing.T) {
 			if block.BlockNumber == maxBlockNumber {
 				// cancel execution when we send the last block
 				cancel()
+				return context.Canceled
 			}
+			return nil
+		},
+		PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
 			return nil
 		},
 	}
@@ -167,14 +201,19 @@ func TestRunLoopUntilCancel(t *testing.T) {
 				Payload:     []byte(`block`),
 			}, nil
 		},
+		CloseFunc: func() error {
+			return nil
+		},
 	}
-	ing := ingester.New(slog.New(slog.NewTextHandler(io.Discard, nil)), rpcClient, duneapi, ingester.Config{
+	// Swap these to see logs
+	// logOutput := os.Stderr
+	logOutput := io.Discard
+	ing := ingester.New(slog.New(slog.NewTextHandler(logOutput, nil)), rpcClient, duneapi, ingester.Config{
 		MaxBatchSize: 1,
 		PollInterval: 1000 * time.Millisecond,
 	})
 
-	err := ing.Run(ctx, 0, maxBlockNumber)
-	require.NoError(t, err)
-	require.Equal(t, producedBlockNumber, maxBlockNumber)
+	err := ing.Run(ctx, 1, -1)                // run until canceled
+	require.ErrorIs(t, err, context.Canceled) // this is expected
 	require.Equal(t, sentBlockNumber, maxBlockNumber)
 }
