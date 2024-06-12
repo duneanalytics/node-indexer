@@ -40,6 +40,8 @@ type Config struct {
 	MaxBatchSize           int
 	PollInterval           time.Duration
 	ReportProgressInterval time.Duration
+	Stack                  models.EVMStack
+	BlockchainName         string
 }
 
 type Info struct {

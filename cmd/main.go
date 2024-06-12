@@ -68,6 +68,8 @@ func main() {
 			MaxBatchSize:           1,
 			ReportProgressInterval: cfg.ReportProgressInterval,
 			PollInterval:           cfg.PollInterval,
+			Stack:                  cfg.RPCStack,
+			BlockchainName:         cfg.BlockchainName,
 		},
 	)
 
