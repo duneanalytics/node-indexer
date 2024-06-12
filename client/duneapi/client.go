@@ -184,17 +184,22 @@ func (c *client) PostProgressReport(ctx context.Context, progress models.Blockch
 		} else {
 			c.log.Info("Sent progress report",
 				"lastIngestedBlockNumer", request.LastIngestedBlockNumber,
+				"latestBlockNumber", request.LatestBlockNumber,
 				"duration", time.Since(start),
 			)
 		}
 	}()
 
+	request = BlockchainProgress{
+		LastIngestedBlockNumber: progress.LastIngestedBlockNumber,
+		LatestBlockNumber:       progress.LatestBlockNumber,
+	}
 	url := fmt.Sprintf("%s/api/beta/blockchain/%s/ingest/progress", c.cfg.URL, c.cfg.BlockchainName)
-	c.log.Debug("Sending request", "url", url)
-	payload, err := json.Marshal(progress)
+	payload, err := json.Marshal(request)
 	if err != nil {
 		return err
 	}
+	c.log.Info("Sending request", "url", url, "payload", string(payload))
 	req, err := retryablehttp.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
 	if err != nil {
 		return err

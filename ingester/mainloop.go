@@ -11,29 +11,22 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func (i *ingester) Run(ctx context.Context, startBlockNumber, maxCount int64) error {
-	inFlightChan := make(chan models.RPCBlock, i.cfg.MaxBatchSize)
-	defer close(inFlightChan)
+func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int64) error {
+	ctx, cancel := context.WithCancel(ctx)
 
-	var err error
+	inFlightChan := make(chan models.RPCBlock, i.cfg.MaxBatchSize) // we close this after ConsumeBlocks has returned
 
-	if startBlockNumber < 0 {
-		startBlockNumber, err = i.node.LatestBlockNumber()
-		if err != nil {
-			return errors.Errorf("failed to get latest block number: %w", err)
-		}
-	}
+	// Ingest until endBlockNumber, inclusive. If maxCount is <= 0, we ingest forever
+	endBlockNumber := startBlockNumber - 1 + maxCount
 
 	i.log.Info("Starting ingester",
 		"maxBatchSize", i.cfg.MaxBatchSize,
 		"startBlockNumber", startBlockNumber,
+		"endBlockNumber", endBlockNumber,
 		"maxCount", maxCount,
 	)
 
 	errGroup, ctx := errgroup.WithContext(ctx)
-	errGroup.Go(func() error {
-		return i.ConsumeBlocks(ctx, inFlightChan, startBlockNumber, startBlockNumber+maxCount)
-	})
 	errGroup.Go(func() error {
 		return i.SendBlocks(ctx, inFlightChan)
 	})
@@ -41,9 +34,20 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber, maxCount int64) er
 		return i.ReportProgress(ctx)
 	})
 
+	err := i.ConsumeBlocks(ctx, inFlightChan, startBlockNumber, endBlockNumber)
+	close(inFlightChan)
+	cancel()
+	if err != nil {
+		if err := errGroup.Wait(); err != nil {
+			i.log.Error("errgroup wait", "error", err)
+		}
+		return errors.Errorf("consume blocks: %w", err)
+	}
+
 	if err := errGroup.Wait(); err != nil && err != ErrFinishedConsumeBlocks {
 		return err
 	}
+
 	return nil
 }
 
@@ -53,10 +57,9 @@ var ErrFinishedConsumeBlocks = errors.New("finished ConsumeBlocks")
 func (i *ingester) ConsumeBlocks(
 	ctx context.Context, outChan chan models.RPCBlock, startBlockNumber, endBlockNumber int64,
 ) error {
-	dontStop := endBlockNumber <= startBlockNumber
 	latestBlockNumber := i.tryUpdateLatestBlockNumber()
 
-	waitForBlock := func(ctx context.Context, blockNumber, latestBlockNumber int64) int64 {
+	waitForBlock := func(ctx context.Context, blockNumber int64, latestBlockNumber int64) int64 {
 		for blockNumber > latestBlockNumber {
 			select {
 			case <-ctx.Done():
@@ -72,15 +75,19 @@ func (i *ingester) ConsumeBlocks(
 		return latestBlockNumber
 	}
 
+	// Consume blocks forever if end is before start. This happens if Run is called with a maxCount of <= 0
+	dontStop := endBlockNumber < startBlockNumber
+
 	for blockNumber := startBlockNumber; dontStop || blockNumber <= endBlockNumber; blockNumber++ {
 		latestBlockNumber = waitForBlock(ctx, blockNumber, latestBlockNumber)
 		startTime := time.Now()
 
+		i.log.Info("Getting block by number", "blockNumber", blockNumber, "latestBlockNumber", latestBlockNumber)
 		block, err := i.node.BlockByNumber(ctx, blockNumber)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				i.log.Info("Context canceled, stopping..")
-				return err
+				return ctx.Err()
 			}
 
 			i.log.Error("Failed to get block by number, continuing..",
@@ -119,33 +126,33 @@ func (i *ingester) ConsumeBlocks(
 			)
 		}
 	}
-	return ErrFinishedConsumeBlocks // FIXME: this is wrong
+	// Done consuming blocks, either because we reached the endBlockNumber or the context was canceled
+	i.log.Info("Finished consuming blocks", "latestBlockNumber", latestBlockNumber, "endBlockNumber", endBlockNumber)
+	return ErrFinishedConsumeBlocks
 }
 
 func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlock) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil // context canceled
-		case payload, ok := <-blocksCh:
-			// TODO: we should batch RCP blocks here before sending to Dune.
-			if !ok {
-				return nil // channel closed
+	for payload := range blocksCh {
+		// TODO: we should batch RCP blocks here before sending to Dune.
+		if err := i.dune.SendBlock(ctx, payload); err != nil {
+			if errors.Is(err, context.Canceled) {
+				i.log.Info("Context canceled, stopping..")
+				return ctx.Err()
 			}
-			if err := i.dune.SendBlock(ctx, payload); err != nil {
-				// TODO: implement DeadLetterQueue
-				// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
-				i.log.Error("SendBlock failed, continuing..", "blockNumber", payload.BlockNumber, "error", err)
-				i.info.DuneErrors = append(i.info.DuneErrors, ErrorInfo{
-					Timestamp:   time.Now(),
-					BlockNumber: payload.BlockNumber,
-					Error:       err,
-				})
-			} else {
-				atomic.StoreInt64(&i.info.IngestedBlockNumber, payload.BlockNumber)
-			}
+			// TODO: implement DeadLetterQueue
+			// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
+			i.log.Error("SendBlock failed, continuing..", "blockNumber", payload.BlockNumber, "error", err)
+			i.info.DuneErrors = append(i.info.DuneErrors, ErrorInfo{
+				Timestamp:   time.Now(),
+				BlockNumber: payload.BlockNumber,
+				Error:       err,
+			})
+		} else {
+			i.log.Info("Updating latest ingested block number", "blockNumber", payload.BlockNumber)
+			atomic.StoreInt64(&i.info.IngestedBlockNumber, payload.BlockNumber)
 		}
 	}
+	return ctx.Err() // channel closed
 }
 
 func (i *ingester) tryUpdateLatestBlockNumber() int64 {
@@ -169,7 +176,7 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		case tNow := <-timer.C:
 			latest := atomic.LoadInt64(&i.info.LatestBlockNumber)
 			lastIngested := atomic.LoadInt64(&i.info.IngestedBlockNumber)
@@ -202,10 +209,39 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 			previousIngested = lastIngested
 			previousDistance = newDistance
 			previousTime = tNow
+
+			// TODO: include errors in the report, reset the error list
+			err := i.dune.PostProgressReport(ctx, models.BlockchainIndexProgress{
+				BlockchainName:          i.cfg.BlockchainName,
+				EVMStack:                i.cfg.Stack.String(),
+				LastIngestedBlockNumber: lastIngested,
+				LatestBlockNumber:       latest,
+			})
+			if err != nil {
+				i.log.Error("Failed to post progress report", "error", err)
+			}
 		}
 	}
 }
 
 func (i *ingester) Close() error {
+	// Send a final progress report to flush progress
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	i.log.Info("Sending final progress report")
+	err := i.dune.PostProgressReport(
+		ctx,
+		models.BlockchainIndexProgress{
+			BlockchainName:          i.cfg.BlockchainName,
+			EVMStack:                i.cfg.Stack.String(),
+			LastIngestedBlockNumber: i.info.IngestedBlockNumber,
+			LatestBlockNumber:       i.info.LatestBlockNumber,
+		})
+	i.log.Info("Closing node")
+	if err != nil {
+		_ = i.node.Close()
+		return err
+	}
+
 	return i.node.Close()
 }

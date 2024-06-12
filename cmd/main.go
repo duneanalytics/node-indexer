@@ -60,6 +60,22 @@ func main() {
 		stdlog.Fatal(err)
 	}
 
+	ctx, cancelFn := context.WithCancel(context.Background())
+
+	// Get stored progress unless config indicates we should start from 0
+	var startBlockNumber int64
+	// Default to -1 to start where the ingester left off
+	if cfg.BlockHeight == -1 {
+		progress, err := duneClient.GetProgressReport(ctx)
+		if err != nil {
+			stdlog.Fatal(err)
+		}
+		startBlockNumber = progress.LastIngestedBlockNumber + 1
+	} else {
+		startBlockNumber = cfg.BlockHeight
+	}
+
+	maxCount := int64(0) // 0 means ingest until cancelled
 	ingester := ingester.New(
 		logger,
 		rpcClient,
@@ -73,14 +89,14 @@ func main() {
 		},
 	)
 
-	ctx, cancelFn := context.WithCancel(context.Background())
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := ingester.Run(ctx, cfg.BlockHeight, 0 /* maxCount */)
+		err := ingester.Run(ctx, startBlockNumber, maxCount)
 		logger.Info("Ingester finished", "err", err)
 	}()
+
+	defer ingester.Close()
 
 	// TODO: add a metrics exporter or healthcheck http endpoint ?
 
