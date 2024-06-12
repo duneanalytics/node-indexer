@@ -1,10 +1,7 @@
 ---
 name: "Pull Request"
 
-on:
-  pull_request:
-    branches:
-      - main
+on: pull_request
 
 jobs:
   test:
