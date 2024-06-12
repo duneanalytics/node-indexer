@@ -1,6 +1,6 @@
 .PHONY: all setup lint build test image-build image-push
 
-APPLICATION := ingester
+APPLICATION := indexer
 GITHUB_SHA ?= HEAD
 REF_TAG := $(shell echo ${GITHUB_REF_NAME} | tr -cd '[:alnum:]')
 IMAGE_TAG := ${ECR_REGISTRY}/${ECR_REPOSITORY}:${REF_TAG}-$(shell git rev-parse --short "${GITHUB_SHA}")-${GITHUB_RUN_NUMBER}
@@ -19,7 +19,7 @@ bin/gofumpt: bin
 	GOBIN=$(PWD)/bin go install mvdan.cc/gofumpt@v0.6.0
 
 build: lint cmd/main.go
-	go build -o ingester cmd/main.go
+	go build -o indexer cmd/main.go
 
 lint: bin/golangci-lint bin/gofumpt
 	go fmt ./...
@@ -38,11 +38,11 @@ gen-mocks: bin/moq ./client/jsonrpc/ ./client/duneapi/
 
 
 image-build:
-	@echo "# Building ingester docker image..."
+	@echo "# Building indexer docker image..."
 	docker build -t $(APPLICATION) -f Dockerfile --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} .
 
 image-push: image-build
-	@echo "# Pushing ingester docker image..."
+	@echo "# Pushing indexer docker image..."
 	docker tag $(APPLICATION) ${IMAGE_TAG}
 	# docker push ${IMAGE_TAG}
 	docker rmi ${IMAGE_TAG}
