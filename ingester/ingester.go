@@ -12,12 +12,12 @@ import (
 
 type Ingester interface {
 	// Run starts the ingester and blocks until the context is cancelled or maxCount blocks are ingested
-	Run(ctx context.Context, startBlockNumber, maxCount int64) error
+	Run(ctx context.Context, startBlockNumber int64, maxCount int64) error
 
 	// ConsumeBlocks sends blocks from startBlockNumber to endBlockNumber to outChan, inclusive.
 	// If endBlockNumber is -1, it sends blocks from startBlockNumber to the tip of the chain
 	// it will run continuously until the context is cancelled
-	ConsumeBlocks(ctx context.Context, outChan chan models.RPCBlock, startBlockNumber, endBlockNumber int64) error
+	ConsumeBlocks(ctx context.Context, outChan chan models.RPCBlock, startBlockNumber int64, endBlockNumber int64) error
 
 	// SendBlocks pushes to DuneAPI the RPCBlock Payloads as they are received in an endless loop
 	// it will block until:
@@ -28,6 +28,8 @@ type Ingester interface {
 
 	// This is just a placeholder for now
 	Info() Info
+
+	Close() error
 }
 
 const (
@@ -40,6 +42,8 @@ type Config struct {
 	MaxBatchSize           int
 	PollInterval           time.Duration
 	ReportProgressInterval time.Duration
+	Stack                  models.EVMStack
+	BlockchainName         string
 }
 
 type Info struct {
