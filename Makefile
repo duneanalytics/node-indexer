@@ -18,7 +18,7 @@ bin/golangci-lint:
 bin/gofumpt: bin
 	GOBIN=$(PWD)/bin go install mvdan.cc/gofumpt@v0.6.0
 
-build: lint cmd/main.go
+build: cmd/main.go
 	go build -o indexer cmd/main.go
 
 lint: bin/golangci-lint bin/gofumpt
