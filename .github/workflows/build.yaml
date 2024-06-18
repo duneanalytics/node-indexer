@@ -22,7 +22,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1.6.1
         with:
-          role-to-assume: arn:aws:iam::118330671040:role/node-indexer
+          role-to-assume: arn:aws:iam::118330671040:role/node-indexer-ci
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
