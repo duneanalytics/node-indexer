@@ -1,6 +1,5 @@
 .PHONY: all setup lint build test image-build image-push
 
-APPLICATION := indexer
 GITHUB_SHA ?= HEAD
 REF_TAG := $(shell echo ${GITHUB_REF_NAME} | tr -cd '[:alnum:]')
 IMAGE_TAG := ${ECR_REGISTRY}/${ECR_REPOSITORY}:${REF_TAG}-$(shell git rev-parse --short "${GITHUB_SHA}")-${GITHUB_RUN_NUMBER}
@@ -38,11 +37,16 @@ gen-mocks: bin/moq ./client/jsonrpc/ ./client/duneapi/
 
 
 image-build:
-	@echo "# Building indexer docker image..."
-	docker build -t $(APPLICATION) -f Dockerfile --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} .
+	@echo "# Building indexer docker image for amd64 and arm64"
+	docker buildx build --platform linux/amd64 -t ${IMAGE_TAG}-amd64 -f Dockerfile --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} .
+	docker buildx build --platform linux/arm64 -t ${IMAGE_TAG}-arm64 -f Dockerfile --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} .
 
 image-push: image-build
-	@echo "# Pushing indexer docker image..."
-	docker tag $(APPLICATION) ${IMAGE_TAG}
-	# docker push ${IMAGE_TAG}
-	docker rmi ${IMAGE_TAG}
+	@echo "# Pushing indexer docker images"
+	# docker manifest create --insecure "${IMAGE_TAG}" "${IMAGE_TAG}-amd64"
+	# docker manifest create -a "${IMAGE_TAG}" "${IMAGE_TAG}-arm64" --insecure
+	# docker manifest push "${IMAGE_TAG}" --insecure
+	# docker push "${IMAGE_TAG}-amd64"
+	# docker push "${IMAGE_TAG}-arm64"
+	# docker rmi "${IMAGE_TAG}-amd64"
+	# docker rmi "${IMAGE_TAG}-arm64"
