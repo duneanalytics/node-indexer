@@ -1,6 +1,7 @@
-FROM golang:1.22-bookworm AS builder
+FROM golang:1.22-alpine AS builder
 
-RUN apt update && apt install -y curl make
+# dependencies to build the project & dependencies
+RUN apk add --no-cache git make curl gcc musl-dev binutils-gold
 
 # First copy just enough to pull all dependencies, to cache this layer
 COPY go.mod go.sum Makefile /app/
@@ -11,15 +12,14 @@ RUN make setup
 COPY . .
 
 # Lint, build, etc..
-COPY . /app/
 RUN make test
 RUN make build
 
-FROM debian:bookworm-slim
-RUN apt update \
-	&& apt install -y ca-certificates \
-	&& apt clean \
-	&& rm -rf /var/lib/apt/lists/*
+# Stage 2: Create a minimal runtime image
+FROM alpine:latest
+
+# Install ca-certificates
+RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /app/indexer /
 ENTRYPOINT ["/indexer"]
