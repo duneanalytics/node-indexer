@@ -16,12 +16,12 @@ bin:
 bin/moq: bin
 	GOBIN=$(PWD)/bin go install github.com/matryer/moq@v0.3.4
 bin/golangci-lint: bin
-	GOBIN=$(PWD)/bin go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.0
+	GOBIN=$(PWD)/bin go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.1
 bin/gofumpt: bin
 	GOBIN=$(PWD)/bin go install mvdan.cc/gofumpt@v0.6.0
 
 build: cmd/main.go
-	go build -o indexer cmd/main.go
+	CGO_ENABLED=0 go build -o indexer cmd/main.go
 
 lint: bin/golangci-lint bin/gofumpt
 	go fmt ./...
@@ -32,7 +32,7 @@ lint: bin/golangci-lint bin/gofumpt
 
 test:
 	go mod tidy
-	go test -timeout=$(TEST_TIMEOUT) -race -bench=. -benchmem -cover ./...
+	CGO_ENABLED=1 go test -timeout=$(TEST_TIMEOUT) -race -bench=. -benchmem -cover ./...
 
 gen-mocks: bin/moq ./client/jsonrpc/ ./client/duneapi/
 	./bin/moq -pkg jsonrpc_mock -out ./mocks/jsonrpc/rpcnode.go ./client/jsonrpc BlockchainClient
