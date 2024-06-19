@@ -34,7 +34,7 @@ func (r RPCClient) HasError() error {
 type Config struct {
 	BlockHeight            int64  `long:"block-height" env:"BLOCK_HEIGHT" description:"block height to start from" default:"-1"`                     // nolint:lll
 	BlockchainName         string `long:"blockchain-name" env:"BLOCKCHAIN_NAME" description:"name of the blockchain" required:"true"`                // nolint:lll
-	EnableCompression      bool   `long:"enable-compression" env:"ENABLE_COMPRESSION" description:"enable compression when pushing payload to Dune"` // nolint:lll
+	DisableCompression     bool   `long:"disable-compression" env:"DISABLE_COMPRESSION" description:"disable compression when sending data to Dune"` // nolint:lll
 	Dune                   DuneClient
 	PollInterval           time.Duration `long:"rpc-poll-interval" env:"RPC_POLL_INTERVAL" description:"Interval to poll the blockchain node" default:"300ms"`    // nolint:lll
 	ReportProgressInterval time.Duration `long:"report-progress-interval" env:"REPORT_PROGRESS_INTERVAL" description:"Interval to report progress" default:"30s"` // nolint:lll

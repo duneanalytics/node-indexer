@@ -26,19 +26,19 @@ func init() {
 }
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	slog.SetDefault(logger)
 	cfg, err := config.Parse()
 	if err != nil {
 		stdlog.Fatal(err)
 	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	slog.SetDefault(logger)
 
 	duneClient, err := duneapi.New(logger, duneapi.Config{
 		APIKey:             cfg.Dune.APIKey,
 		URL:                cfg.Dune.URL,
 		BlockchainName:     cfg.BlockchainName,
 		Stack:              cfg.RPCStack,
-		DisableCompression: !cfg.EnableCompression,
+		DisableCompression: cfg.DisableCompression,
 	})
 	if err != nil {
 		stdlog.Fatal(err)
