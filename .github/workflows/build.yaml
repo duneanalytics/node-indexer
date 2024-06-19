@@ -36,8 +36,6 @@ jobs:
 
       - env:
           GITHUB_TOKEN: ${{ secrets.DUNE_ENG_ACCESS_TOKEN }}
-          ECR_REGISTRY: public.ecr.aws/duneanalytics
-          ECR_REPOSITORY: node-indexer
+          DOCKER_HUB_KEY: ${{ secrets.DOCKER_HUB_KEY }}
         run: |
-          make image-build
           make image-push

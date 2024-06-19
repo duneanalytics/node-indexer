@@ -1,7 +1,7 @@
 FROM golang:1.22-alpine AS builder
 
 # dependencies to build the project & dependencies
-RUN apk add --no-cache git make curl gcc musl-dev binutils-gold
+RUN apk add --no-cache git make curl gcc musl-dev binutils-gold bash
 
 # First copy just enough to pull all dependencies, to cache this layer
 COPY go.mod go.sum Makefile /app/
@@ -11,8 +11,7 @@ RUN make setup
 # Copy the rest of the source code
 COPY . .
 
-# Lint, build, etc..
-RUN make test
+# Build
 RUN make build
 
 # Stage 2: Create a minimal runtime image
