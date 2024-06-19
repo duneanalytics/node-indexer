@@ -24,7 +24,6 @@ You can use our public docker container image and run it as such:
 docker run -e BLOCKCHAIN_NAME='foo' -e RPC_NODE_URL='http://localhost:8545' -e DUNE_API_KEY='your-key-here' duneanalytics/node-indexer
 
 ```
-BLOCKCHAIN_NAME='foo' RPC_NODE_URL='https://localhost:8545' DUNE_API_KEY='your-key-here' ./indexer
 
 
 
