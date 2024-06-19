@@ -10,9 +10,12 @@ all: lint test build
 setup: bin/golangci-lint bin/gofumpt bin/moq
 	go mod download
 
-bin/moq:
+bin:
+	mkdir -p bin
+
+bin/moq: bin
 	GOBIN=$(PWD)/bin go install github.com/matryer/moq@v0.3.4
-bin/golangci-lint:
+bin/golangci-lint: bin
 	GOBIN=$(PWD)/bin go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.0
 bin/gofumpt: bin
 	GOBIN=$(PWD)/bin go install mvdan.cc/gofumpt@v0.6.0

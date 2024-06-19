@@ -2,18 +2,17 @@ FROM golang:1.22-bookworm AS builder
 
 RUN apt update && apt install -y curl make
 
-ARG GITHUB_TOKEN
-
 # First copy just enough to pull all dependencies, to cache this layer
 COPY go.mod go.sum Makefile /app/
 WORKDIR /app/
-RUN git config --global url."https://dune-eng:${GITHUB_TOKEN}@github.com".insteadOf "https://github.com" \
-	&& make setup
+RUN make setup
 
 # Copy the rest of the source code
-ADD . .
+COPY . .
 
 # Lint, build, etc..
+COPY . /app/
+RUN make test
 RUN make build
 
 FROM debian:bookworm-slim
@@ -22,6 +21,5 @@ RUN apt update \
 	&& apt clean \
 	&& rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/indexer /indexer
-
+COPY --from=builder /app/indexer /
 ENTRYPOINT ["/indexer"]
