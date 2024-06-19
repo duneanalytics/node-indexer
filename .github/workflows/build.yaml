@@ -11,7 +11,7 @@ jobs:
     name: "Build Docker image and push to Dockerhub"
     runs-on: ubuntu-latest
     env:
-      AWS_REGION: eu-west-1
+      AWS_REGION: us-east-1
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     permissions:
       id-token: write
