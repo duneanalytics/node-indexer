@@ -69,8 +69,9 @@ func main() {
 		progress, err := duneClient.GetProgressReport(ctx)
 		if err != nil {
 			stdlog.Fatal(err)
+		} else {
+			startBlockNumber = progress.LastIngestedBlockNumber + 1
 		}
-		startBlockNumber = progress.LastIngestedBlockNumber + 1
 	} else {
 		startBlockNumber = cfg.BlockHeight
 	}
