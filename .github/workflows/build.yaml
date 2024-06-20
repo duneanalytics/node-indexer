@@ -11,7 +11,7 @@ jobs:
     name: "Build Docker image and push to Dockerhub"
     runs-on: ubuntu-latest
     env:
-      AWS_REGION: us-east-1
+      AWS_REGION: us-east-1 # This is the region to authenticate against for public ECR repositories
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     permissions:
       id-token: write
@@ -36,8 +36,5 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
 
-      - env:
-          GITHUB_TOKEN: ${{ secrets.DUNE_ENG_ACCESS_TOKEN }}
-          DOCKER_HUB_KEY: ${{ secrets.DOCKER_HUB_KEY }}
-        run: |
+      - run: |
           make image-push

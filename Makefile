@@ -38,10 +38,10 @@ gen-mocks: bin/moq ./client/jsonrpc/ ./client/duneapi/
 
 image-build:
 	@echo "# Building Docker images"
-	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v8  -t public.ecr.aws/duneanalytics/node-indexer:latest -f Dockerfile --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} .
+	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v8  -t public.ecr.aws/duneanalytics/node-indexer:latest -f Dockerfile .
 
 image-push:
 	@echo "# Pushing Docker images to ECR (after building)"
 	docker buildx create --name mybuilder
 	docker buildx use mybuilder
-	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v8 -t public.ecr.aws/duneanalytics/node-indexer:latest -f Dockerfile --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} --push .
+	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v8 -t public.ecr.aws/duneanalytics/node-indexer:latest -f Dockerfile --push .
