@@ -271,6 +271,15 @@ func (c *client) GetProgressReport(ctx context.Context) (*models.BlockchainIndex
 		return nil, err
 	}
 
+	if resp.StatusCode == http.StatusNotFound {
+		// no progress yet, first ingest for this chain
+		return &models.BlockchainIndexProgress{
+			BlockchainName:          c.cfg.BlockchainName,
+			EVMStack:                c.cfg.Stack.String(),
+			LastIngestedBlockNumber: -1, // no block ingested
+			LatestBlockNumber:       0,
+		}, nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		var errorResp errorResponse
 		err = json.Unmarshal(responseBody, &errorResp)
@@ -278,15 +287,6 @@ func (c *client) GetProgressReport(ctx context.Context) (*models.BlockchainIndex
 			return nil, err
 		}
 		err = fmt.Errorf("got non-OK response, status code: %d, body: '%s'", resp.StatusCode, errorResp.Error)
-		// No progress yet
-		if resp.StatusCode == http.StatusNotFound {
-			return &models.BlockchainIndexProgress{
-				BlockchainName:          c.cfg.BlockchainName,
-				EVMStack:                c.cfg.Stack.String(),
-				LastIngestedBlockNumber: 0,
-				LatestBlockNumber:       0,
-			}, nil
-		}
 		return nil, err
 	}
 
