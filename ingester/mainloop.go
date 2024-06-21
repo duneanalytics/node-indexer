@@ -124,7 +124,6 @@ func (i *ingester) ConsumeBlocks(
 		case blockNumber := <-blockNumbers:
 			startTime := time.Now()
 
-			i.log.Info("Getting block by number", "blockNumber", blockNumber)
 			block, err := i.node.BlockByNumber(ctx, blockNumber)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
@@ -154,7 +153,6 @@ func (i *ingester) ConsumeBlocks(
 				i.log.Info("ConsumeBlocks: Channel is closed, not sending block to channel", "blockNumber", block.BlockNumber)
 				return ctx.Err()
 			case blocks <- block:
-				i.log.Info("Sent block")
 			}
 		}
 	}
@@ -178,11 +176,9 @@ func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlo
 			}
 
 			blockMap[block.BlockNumber] = block
-			i.log.Info("Received block", "blockNumber", block.BlockNumber)
 
 			// Send this block only if we have sent all previous blocks
 			for block, ok := blockMap[next]; ok; block, ok = blockMap[next] {
-				i.log.Info("SendBlocks: Sending block to DuneAPI", "blockNumber", block.BlockNumber)
 				if err := i.dune.SendBlock(ctx, block); err != nil {
 					if errors.Is(err, context.Canceled) {
 						i.log.Info("SendBlocks: Context canceled, stopping")
@@ -197,7 +193,6 @@ func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlo
 						Error:       err,
 					})
 				} else {
-					i.log.Info("Updating latest ingested block number", "blockNumber", block.BlockNumber)
 					atomic.StoreInt64(&i.info.IngestedBlockNumber, block.BlockNumber)
 				}
 
@@ -250,7 +245,8 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 				fields = append(fields, "fallingBehind", fallingBehind)
 			}
 			if newDistance > 1 {
-				fields = append(fields, "distanceFromLatest", newDistance)
+				etaHours := time.Duration(float64(newDistance) / blocksPerSec * float64(time.Second)).Hours()
+				fields = append(fields, "hoursToCatchUp", fmt.Sprintf("%.1f", etaHours))
 			}
 			if rpcErrors > 0 {
 				fields = append(fields, "rpcErrors", rpcErrors)
@@ -259,7 +255,7 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 				fields = append(fields, "duneErrors", duneErrors)
 			}
 
-			i.log.Info("ProgressReport", fields...)
+			i.log.Info("PROGRESS REPORT", fields...)
 			previousIngested = lastIngested
 			previousDistance = newDistance
 			previousTime = tNow

@@ -18,6 +18,8 @@ import (
 
 const (
 	MaxRetries = 20 // try really hard to send the block
+	MinWaitDur = 100 * time.Millisecond
+	MaxWaitDur = 5 * time.Second
 )
 
 type BlockchainIngester interface {
@@ -53,8 +55,18 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 	httpClient := retryablehttp.NewClient()
 	httpClient.RetryMax = MaxRetries
 	httpClient.Logger = log
-	httpClient.CheckRetry = retryablehttp.DefaultRetryPolicy
+	checkRetry := func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+		yes, err2 := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
+		if yes {
+			log.Warn("Retrying request", "statusCode", resp.Status, "error", err)
+		}
+		return yes, err2
+	}
+
+	httpClient.CheckRetry = checkRetry
 	httpClient.Backoff = retryablehttp.LinearJitterBackoff
+	httpClient.RetryWaitMin = MinWaitDur
+	httpClient.RetryWaitMax = MaxWaitDur
 	return &client{
 		log:        log.With("module", "duneapi"),
 		httpClient: httpClient,
@@ -154,7 +166,6 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
