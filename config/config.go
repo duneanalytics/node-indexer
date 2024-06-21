@@ -40,6 +40,7 @@ type Config struct {
 	ReportProgressInterval time.Duration `long:"report-progress-interval" env:"REPORT_PROGRESS_INTERVAL" description:"Interval to report progress" default:"30s"` // nolint:lll
 	RPCNode                RPCClient
 	RPCStack               models.EVMStack `long:"rpc-stack" env:"RPC_STACK" description:"Stack for the RPC client" default:"opstack"` // nolint:lll
+	Concurrency            int             `long:"concurrency" env:"CONCURRENCY" description:"Number of concurrent workers"`           // nolint:lll
 }
 
 func (c Config) HasError() error {

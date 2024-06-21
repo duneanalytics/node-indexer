@@ -14,17 +14,22 @@ type Ingester interface {
 	// Run starts the ingester and blocks until the context is cancelled or maxCount blocks are ingested
 	Run(ctx context.Context, startBlockNumber int64, maxCount int64) error
 
-	// ConsumeBlocks sends blocks from startBlockNumber to endBlockNumber to outChan, inclusive.
+	// ProduceBlockNumbers sends block numbers from startBlockNumber to endBlockNumber to outChan, inclusive.
 	// If endBlockNumber is -1, it sends blocks from startBlockNumber to the tip of the chain
 	// it will run continuously until the context is cancelled
-	ConsumeBlocks(ctx context.Context, outChan chan models.RPCBlock, startBlockNumber int64, endBlockNumber int64) error
+	ProduceBlockNumbers(ctx context.Context, outChan chan int64, startBlockNumber int64, endBlockNumber int64) error
+
+	// ConsumeBlocks fetches blocks sent on the channel and sends them on the other channel.
+	// It will run continuously until the context is cancelled, or the channel is closed.
+	// It can safely be run concurrently.
+	ConsumeBlocks(context.Context, chan int64, chan models.RPCBlock) error
 
 	// SendBlocks pushes to DuneAPI the RPCBlock Payloads as they are received in an endless loop
 	// it will block until:
 	//	- the context is cancelled
 	//  - channel is closed
 	//  - a fatal error occurs
-	SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlock) error
+	SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlock, startFrom int64) error
 
 	// This is just a placeholder for now
 	Info() Info
@@ -33,7 +38,7 @@ type Ingester interface {
 }
 
 const (
-	defaultMaxBatchSize           = 1
+	defaultMaxBatchSize           = 5
 	defaultPollInterval           = 1 * time.Second
 	defaultReportProgressInterval = 30 * time.Second
 )
