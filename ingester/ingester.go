@@ -19,10 +19,10 @@ type Ingester interface {
 	// it will run continuously until the context is cancelled
 	ProduceBlockNumbers(ctx context.Context, outChan chan int64, startBlockNumber int64, endBlockNumber int64) error
 
-	// ConsumeBlocks fetches blocks sent on the channel and sends them on the other channel.
+	// FetchBlockLoop fetches blocks sent on the channel and sends them on the other channel.
 	// It will run continuously until the context is cancelled, or the channel is closed.
 	// It can safely be run concurrently.
-	ConsumeBlocks(context.Context, chan int64, chan models.RPCBlock) error
+	FetchBlockLoop(context.Context, chan int64, chan models.RPCBlock) error
 
 	// SendBlocks pushes to DuneAPI the RPCBlock Payloads as they are received in an endless loop
 	// it will block until:
@@ -83,9 +83,6 @@ func New(log *slog.Logger, node jsonrpc.BlockchainClient, dune duneapi.Blockchai
 			RPCErrors:  []ErrorInfo{},
 			DuneErrors: []ErrorInfo{},
 		},
-	}
-	if ing.cfg.MaxBatchSize == 0 {
-		ing.cfg.MaxBatchSize = defaultMaxBatchSize
 	}
 	if ing.cfg.PollInterval == 0 {
 		ing.cfg.PollInterval = defaultPollInterval

@@ -13,10 +13,10 @@ import (
 
 // Run fetches blocks from a node RPC and sends them in order to the Dune API.
 //
-// ProduceBlockNumbers (blockNumbers channel) -> ConsumeBlocks (blocks channel) -> SendBlocks -> Dune
+// ProduceBlockNumbers (blockNumbers channel) -> FetchBlockLoop (blocks channel) -> SendBlocks -> Dune
 //
 // We produce block numbers to fetch on an unbuffered channel (ProduceBlockNumbers),
-// and each concurrent ConsumeBlock goroutine gets a block number from that channel.
+// and each concurrent FetchBlockLoop goroutine gets a block number from that channel.
 // The SendBlocks goroutine receives all blocks on an unbuffered channel,
 // but buffers them in a map until they can be sent in order.
 func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int64) error {
@@ -31,7 +31,7 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int
 	// Start MaxBatchSize goroutines to consume blocks concurrently
 	for range i.cfg.MaxBatchSize {
 		errGroup.Go(func() error {
-			return i.ConsumeBlocks(ctx, blockNumbers, blocks)
+			return i.FetchBlockLoop(ctx, blockNumbers, blocks)
 		})
 	}
 	errGroup.Go(func() error {
@@ -60,9 +60,9 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int
 	return errGroup.Wait()
 }
 
-var ErrFinishedConsumeBlocks = errors.New("finished ConsumeBlocks")
+var ErrFinishedFetchBlockLoop = errors.New("finished FetchBlockLoop")
 
-// ProduceBlockNumbers to be consumed by multiple goroutines running ConsumeBlocks
+// ProduceBlockNumbers to be consumed by multiple goroutines running FetchBlockLoop
 func (i *ingester) ProduceBlockNumbers(
 	ctx context.Context, blockNumbers chan int64, startBlockNumber int64, endBlockNumber int64,
 ) error {
@@ -109,17 +109,17 @@ func (i *ingester) ProduceBlockNumbers(
 		}
 	}
 	i.log.Info("Finished producing block numbers")
-	return ErrFinishedConsumeBlocks
+	return ErrFinishedFetchBlockLoop
 }
 
-// ConsumeBlocks from the RPC node. This can be run in multiple goroutines to parallelize block fetching.
-func (i *ingester) ConsumeBlocks(
+// FetchBlockLoop from the RPC node. This can be run in multiple goroutines to parallelize block fetching.
+func (i *ingester) FetchBlockLoop(
 	ctx context.Context, blockNumbers chan int64, blocks chan models.RPCBlock,
 ) error {
 	for {
 		select {
 		case <-ctx.Done():
-			i.log.Info("ConsumeBlocks: context is done")
+			i.log.Info("FetchBlockLoop: context is done")
 			return ctx.Err()
 		case blockNumber := <-blockNumbers:
 			startTime := time.Now()
@@ -127,7 +127,7 @@ func (i *ingester) ConsumeBlocks(
 			block, err := i.node.BlockByNumber(ctx, blockNumber)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
-					i.log.Info("ConsumeBlocks: Context canceled, stopping")
+					i.log.Info("FetchBlockLoop: Context canceled, stopping")
 					return ctx.Err()
 				}
 
@@ -147,23 +147,25 @@ func (i *ingester) ConsumeBlocks(
 
 			atomic.StoreInt64(&i.info.ConsumedBlockNumber, block.BlockNumber)
 			getBlockElapsed := time.Since(startTime)
-			i.log.Info("Got block by number", "blockNumber", blockNumber, "elapsed", getBlockElapsed)
+			i.log.Info("FetchBlockLoop: Got block by number", "blockNumber", blockNumber, "elapsed", getBlockElapsed)
+			startTime = time.Now()
 			select {
 			case <-ctx.Done():
-				i.log.Info("ConsumeBlocks: Channel is closed, not sending block to channel", "blockNumber", block.BlockNumber)
+				i.log.Info("FetchBlockLoop: Channel is closed, not sending block to channel", "blockNumber", block.BlockNumber)
 				return ctx.Err()
 			case blocks <- block:
+				i.log.Info("FetchBlockLoop: Sent block", "blockNumber", blockNumber, "elapsed", time.Since(startTime))
 			}
 		}
 	}
 }
 
-// SendBlocks to Dune. We receive blocks from the ConsumeBlocks goroutines, potentially out of order.
+// SendBlocks to Dune. We receive blocks from the FetchBlockLoop goroutines, potentially out of order.
 // We buffer the blocks in a map until we have no gaps, so that we can send them in order to Dune.
 func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlock, startBlockNumber int64) error {
 	i.log.Info("SendBlocks: Starting to receive blocks")
-	blockMap := make(map[int64]models.RPCBlock) // Buffer for temporarily storing blocks that have arrived out of order
-	next := startBlockNumber
+	blocks := make(map[int64]models.RPCBlock) // Buffer for temporarily storing blocks that have arrived out of order
+	nextNumberToSend := startBlockNumber
 	for {
 		select {
 		case <-ctx.Done():
@@ -175,33 +177,46 @@ func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlo
 				return nil
 			}
 
-			blockMap[block.BlockNumber] = block
+			blocks[block.BlockNumber] = block
+			i.log.Info("SendBlocks: Received block", "blockNumber", block.BlockNumber, "bufferSize", len(blocks))
 
-			// Send this block only if we have sent all previous blocks
-			for block, ok := blockMap[next]; ok; block, ok = blockMap[next] {
-				if err := i.dune.SendBlock(ctx, block); err != nil {
-					if errors.Is(err, context.Canceled) {
-						i.log.Info("SendBlocks: Context canceled, stopping")
-						return ctx.Err()
-					}
-					// TODO: implement DeadLetterQueue
-					// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
-					i.log.Error("SendBlocks: Failed, continuing", "blockNumber", block.BlockNumber, "error", err)
-					i.info.DuneErrors = append(i.info.DuneErrors, ErrorInfo{
-						Timestamp:   time.Now(),
-						BlockNumber: block.BlockNumber,
-						Error:       err,
-					})
-				} else {
-					atomic.StoreInt64(&i.info.IngestedBlockNumber, block.BlockNumber)
-				}
-
-				// We've sent block N, so increment the pointer
-				delete(blockMap, next)
-				next++
-			}
+			nextNumberToSend = i.trySendCompletedBlocks(ctx, blocks, nextNumberToSend)
+			i.log.Info("SendBlocks: Sent any completed blocks to DuneAPI", "nextNumberToSend", nextNumberToSend)
 		}
 	}
+}
+
+// trySendCompletedBlocks sends all blocks that can be sent in order from the blockMap.
+// Once we have sent all blocks, if any, we return with the nextNumberToSend.
+// We return the next numberToSend such that the caller can continue from there.
+func (i *ingester) trySendCompletedBlocks(
+	ctx context.Context,
+	blocks map[int64]models.RPCBlock,
+	nextNumberToSend int64,
+) int64 {
+	// Send this block only if we have sent all previous blocks
+	for block, ok := blocks[nextNumberToSend]; ok; block, ok = blocks[nextNumberToSend] {
+		if err := i.dune.SendBlock(ctx, block); err != nil {
+			if errors.Is(err, context.Canceled) {
+				i.log.Info("SendBlocks: Context canceled, stopping")
+				return nextNumberToSend
+			}
+			// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
+			i.log.Error("SendBlocks: Failed, continuing", "blockNumber", block.BlockNumber, "error", err)
+			i.info.DuneErrors = append(i.info.DuneErrors, ErrorInfo{
+				Timestamp:   time.Now(),
+				BlockNumber: block.BlockNumber,
+				Error:       err,
+			})
+		} else {
+			i.log.Info("Updating latest ingested block number", "blockNumber", block.BlockNumber)
+			atomic.StoreInt64(&i.info.IngestedBlockNumber, block.BlockNumber)
+		}
+		// We've sent block N, so increment the pointer
+		delete(blocks, nextNumberToSend)
+		nextNumberToSend++
+	}
+	return nextNumberToSend
 }
 
 func (i *ingester) tryUpdateLatestBlockNumber() int64 {

@@ -149,19 +149,17 @@ func TestSendBlocks(t *testing.T) {
 	require.Equal(t, int64(5), sentBlockNumber)
 }
 
-// TestRunLoopUntilBlocksOutOfOrder asserts that we can fetch blocks concurrently and that we ingest them in order
+// TestRunLoopBlocksOutOfOrder asserts that we can fetch blocks concurrently and that we ingest them in order
 // even if they are produced out of order. We ensure they are produced out of order by sleeping a random amount of time.
-func TestRunLoopUntilBlocksOutOfOrder(t *testing.T) {
+func TestRunLoopBlocksOutOfOrder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	maxBlockNumber := int64(1000)
 	sentBlockNumber := int64(0)
 	producedBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
 		SendBlockFunc: func(_ context.Context, block models.RPCBlock) error {
-			// DuneAPI must fail if it receives blocks out of order
-			if block.BlockNumber != sentBlockNumber+1 {
-				return errors.Errorf("blocks out of order")
-			}
+			// Test must fail if DuneAPI receives blocks out of order
+			require.Equal(t, block.BlockNumber, sentBlockNumber+1)
 
 			atomic.StoreInt64(&sentBlockNumber, block.BlockNumber)
 			if block.BlockNumber == maxBlockNumber {
