@@ -29,6 +29,9 @@ var _ duneapi.BlockchainIngester = &BlockchainIngesterMock{}
 //			SendBlockFunc: func(ctx context.Context, payload models.RPCBlock) error {
 //				panic("mock out the SendBlock method")
 //			},
+//			SendBlocksFunc: func(ctx context.Context, payload []models.RPCBlock) error {
+//				panic("mock out the SendBlocks method")
+//			},
 //		}
 //
 //		// use mockedBlockchainIngester in code that requires duneapi.BlockchainIngester
@@ -44,6 +47,9 @@ type BlockchainIngesterMock struct {
 
 	// SendBlockFunc mocks the SendBlock method.
 	SendBlockFunc func(ctx context.Context, payload models.RPCBlock) error
+
+	// SendBlocksFunc mocks the SendBlocks method.
+	SendBlocksFunc func(ctx context.Context, payload []models.RPCBlock) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -66,10 +72,18 @@ type BlockchainIngesterMock struct {
 			// Payload is the payload argument value.
 			Payload models.RPCBlock
 		}
+		// SendBlocks holds details about calls to the SendBlocks method.
+		SendBlocks []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Payload is the payload argument value.
+			Payload []models.RPCBlock
+		}
 	}
 	lockGetProgressReport  sync.RWMutex
 	lockPostProgressReport sync.RWMutex
 	lockSendBlock          sync.RWMutex
+	lockSendBlocks         sync.RWMutex
 }
 
 // GetProgressReport calls GetProgressReportFunc.
@@ -173,5 +187,41 @@ func (mock *BlockchainIngesterMock) SendBlockCalls() []struct {
 	mock.lockSendBlock.RLock()
 	calls = mock.calls.SendBlock
 	mock.lockSendBlock.RUnlock()
+	return calls
+}
+
+// SendBlocks calls SendBlocksFunc.
+func (mock *BlockchainIngesterMock) SendBlocks(ctx context.Context, payload []models.RPCBlock) error {
+	if mock.SendBlocksFunc == nil {
+		panic("BlockchainIngesterMock.SendBlocksFunc: method is nil but BlockchainIngester.SendBlocks was just called")
+	}
+	callInfo := struct {
+		Ctx     context.Context
+		Payload []models.RPCBlock
+	}{
+		Ctx:     ctx,
+		Payload: payload,
+	}
+	mock.lockSendBlocks.Lock()
+	mock.calls.SendBlocks = append(mock.calls.SendBlocks, callInfo)
+	mock.lockSendBlocks.Unlock()
+	return mock.SendBlocksFunc(ctx, payload)
+}
+
+// SendBlocksCalls gets all the calls that were made to SendBlocks.
+// Check the length with:
+//
+//	len(mockedBlockchainIngester.SendBlocksCalls())
+func (mock *BlockchainIngesterMock) SendBlocksCalls() []struct {
+	Ctx     context.Context
+	Payload []models.RPCBlock
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Payload []models.RPCBlock
+	}
+	mock.lockSendBlocks.RLock()
+	calls = mock.calls.SendBlocks
+	mock.lockSendBlocks.RUnlock()
 	return calls
 }

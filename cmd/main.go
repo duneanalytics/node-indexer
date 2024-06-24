@@ -87,6 +87,7 @@ func main() {
 			PollInterval:           cfg.PollInterval,
 			Stack:                  cfg.RPCStack,
 			BlockchainName:         cfg.BlockchainName,
+			BatchRequestInterval:   cfg.BatchRequestInterval,
 		},
 	)
 

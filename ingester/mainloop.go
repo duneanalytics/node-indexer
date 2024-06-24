@@ -166,7 +166,19 @@ func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlo
 	i.log.Info("SendBlocks: Starting to receive blocks")
 	blocks := make(map[int64]models.RPCBlock) // Buffer for temporarily storing blocks that have arrived out of order
 	nextNumberToSend := startBlockNumber
+	batchTimer := time.NewTicker(i.cfg.BatchRequestInterval)
+	defer batchTimer.Stop()
 	for {
+		// Check if we can send any blocks before checking if we should shut down
+		select {
+		case <-batchTimer.C:
+			nextNumberToSend = i.trySendCompletedBlocks(blocks, nextNumberToSend)
+			i.log.Info("SendBlocks: Sent completed blocks to DuneAPI", "nextNumberToSend", nextNumberToSend)
+		default:
+		}
+
+		// Receive a block or exit if the context is done or the channel is closed
+		// To avoid blocking on the select, we also select on the batchTimer tick
 		select {
 		case <-ctx.Done():
 			i.log.Info("SendBlocks: Context canceled, stopping")
@@ -176,12 +188,11 @@ func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlo
 				i.log.Info("SendBlocks: Channel is closed, returning")
 				return nil
 			}
-
 			blocks[block.BlockNumber] = block
 			i.log.Info("SendBlocks: Received block", "blockNumber", block.BlockNumber, "bufferSize", len(blocks))
-
-			nextNumberToSend = i.trySendCompletedBlocks(ctx, blocks, nextNumberToSend)
-			i.log.Info("SendBlocks: Sent any completed blocks to DuneAPI", "nextNumberToSend", nextNumberToSend)
+		case <-batchTimer.C:
+			nextNumberToSend = i.trySendCompletedBlocks(blocks, nextNumberToSend)
+			i.log.Info("SendBlocks: Sent completed blocks to DuneAPI", "nextNumberToSend", nextNumberToSend)
 		}
 	}
 }
@@ -189,33 +200,60 @@ func (i *ingester) SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlo
 // trySendCompletedBlocks sends all blocks that can be sent in order from the blockMap.
 // Once we have sent all blocks, if any, we return with the nextNumberToSend.
 // We return the next numberToSend such that the caller can continue from there.
+// We use a new context so we're able to flush the buffer even if the main context is canceled.
 func (i *ingester) trySendCompletedBlocks(
-	ctx context.Context,
 	blocks map[int64]models.RPCBlock,
 	nextNumberToSend int64,
 ) int64 {
-	// Send this block only if we have sent all previous blocks
+	// Collect a batch of blocks to send, only send those which are in order
+	batch := make([]models.RPCBlock, 0, len(blocks))
 	for block, ok := blocks[nextNumberToSend]; ok; block, ok = blocks[nextNumberToSend] {
-		if err := i.dune.SendBlock(ctx, block); err != nil {
-			if errors.Is(err, context.Canceled) {
-				i.log.Info("SendBlocks: Context canceled, stopping")
-				return nextNumberToSend
-			}
-			// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
-			i.log.Error("SendBlocks: Failed, continuing", "blockNumber", block.BlockNumber, "error", err)
-			i.info.DuneErrors = append(i.info.DuneErrors, ErrorInfo{
-				Timestamp:   time.Now(),
-				BlockNumber: block.BlockNumber,
-				Error:       err,
-			})
-		} else {
-			i.log.Info("Updating latest ingested block number", "blockNumber", block.BlockNumber)
-			atomic.StoreInt64(&i.info.IngestedBlockNumber, block.BlockNumber)
-		}
-		// We've sent block N, so increment the pointer
+		batch = append(batch, block)
 		delete(blocks, nextNumberToSend)
 		nextNumberToSend++
 	}
+
+	if len(batch) == 0 {
+		return nextNumberToSend
+	}
+
+	blockNumbers := make([]string, len(batch))
+	for i, block := range batch {
+		blockNumbers[i] = fmt.Sprintf("%d", block.BlockNumber)
+	}
+
+	i.log.Info(
+		"SendBlocks: Sending batch",
+		"blockNumberFirst", batch[0].BlockNumber,
+		"blockNumberLast", batch[len(batch)-1].BlockNumber,
+		"batchSize", len(batch),
+	)
+
+	// Send the batch, with a new context so we're able to flush the buffer even if the context is canceled
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second) // Some timeout
+	defer cancel()
+	if err := i.dune.SendBlocks(ctx, batch); err != nil {
+		if errors.Is(err, context.Canceled) {
+			i.log.Info("SendBlocks: Context canceled, stopping")
+			return nextNumberToSend
+		}
+		// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
+		i.log.Error(
+			"SendBlocks: Failed to send batch, continuing",
+			"blockNumberFirst", batch[0].BlockNumber,
+			"blockNumberLast", batch[len(batch)-1].BlockNumber,
+			"error", err,
+		)
+		i.info.DuneErrors = append(i.info.DuneErrors, ErrorInfo{
+			Timestamp:   time.Now(),
+			BlockNumber: batch[0].BlockNumber, // TODO?
+			Error:       err,
+		})
+	} else {
+		i.log.Info("Updating latest ingested block number", "blockNumber", batch[len(batch)-1].BlockNumber)
+		atomic.StoreInt64(&i.info.IngestedBlockNumber, batch[len(batch)-1].BlockNumber)
+	}
+
 	return nextNumberToSend
 }
 

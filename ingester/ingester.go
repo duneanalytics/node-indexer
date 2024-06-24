@@ -41,6 +41,7 @@ const (
 	defaultMaxBatchSize           = 5
 	defaultPollInterval           = 1 * time.Second
 	defaultReportProgressInterval = 30 * time.Second
+	defaultBatchRequestInterval   = 1 * time.Second
 )
 
 type Config struct {
@@ -49,6 +50,7 @@ type Config struct {
 	ReportProgressInterval time.Duration
 	Stack                  models.EVMStack
 	BlockchainName         string
+	BatchRequestInterval   time.Duration
 }
 
 type Info struct {

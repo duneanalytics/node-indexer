@@ -24,7 +24,8 @@ type Config struct {
 }
 
 type BlockchainIngestResponse struct {
-	Tables []IngestedTableInfo `json:"tables"`
+	Error  string              `json:"error,omitempty"`
+	Tables []IngestedTableInfo `json:"tables,omitempty"`
 }
 
 type IngestedTableInfo struct {
@@ -49,11 +50,13 @@ func (b *BlockchainIngestResponse) String() string {
 }
 
 type BlockchainIngestRequest struct {
-	BlockNumber     int64
-	ContentEncoding string
-	EVMStack        string
-	IdempotencyKey  string
-	Payload         []byte
+	FirstBlockNumber int64
+	LastBlockNumber  int64
+	BlockNumbers     []string
+	ContentEncoding  string
+	EVMStack         string
+	IdempotencyKey   string
+	Payload          []byte
 }
 
 type BlockchainProgress struct {
