@@ -39,8 +39,8 @@ type Config struct {
 	PollInterval           time.Duration `long:"rpc-poll-interval" env:"RPC_POLL_INTERVAL" description:"Interval to poll the blockchain node" default:"300ms"`    // nolint:lll
 	ReportProgressInterval time.Duration `long:"report-progress-interval" env:"REPORT_PROGRESS_INTERVAL" description:"Interval to report progress" default:"30s"` // nolint:lll
 	RPCNode                RPCClient
-	RPCStack               models.EVMStack `long:"rpc-stack" env:"RPC_STACK" description:"Stack for the RPC client" default:"opstack"` // nolint:lll
-	Concurrency            int             `long:"concurrency" env:"CONCURRENCY" description:"Number of concurrent workers"`           // nolint:lll
+	RPCStack               models.EVMStack `long:"rpc-stack" env:"RPC_STACK" description:"Stack for the RPC client" default:"opstack"`   // nolint:lll
+	Concurrency            int             `long:"concurrency" env:"CONCURRENCY" description:"Number of concurrent workers" default:"5"` // nolint:lll
 }
 
 func (c Config) HasError() error {
