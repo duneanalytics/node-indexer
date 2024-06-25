@@ -44,11 +44,13 @@ const (
 )
 
 type Config struct {
-	MaxBatchSize           int
+	MaxConcurrentRequests  int
 	PollInterval           time.Duration
 	ReportProgressInterval time.Duration
 	Stack                  models.EVMStack
 	BlockchainName         string
+	BlockSubmitInterval    time.Duration
+	SkipFailedBlocks       bool
 }
 
 type Info struct {
@@ -60,9 +62,9 @@ type Info struct {
 }
 
 type ErrorInfo struct {
-	Timestamp   time.Time
-	BlockNumber int64
-	Error       error
+	Timestamp    time.Time
+	BlockNumbers string
+	Error        error
 }
 
 type ingester struct {
@@ -73,16 +75,27 @@ type ingester struct {
 	info Info
 }
 
-func New(log *slog.Logger, node jsonrpc.BlockchainClient, dune duneapi.BlockchainIngester, cfg Config) Ingester {
+func New(
+	log *slog.Logger,
+	node jsonrpc.BlockchainClient,
+	dune duneapi.BlockchainIngester,
+	cfg Config,
+	progress *models.BlockchainIndexProgress,
+) Ingester {
+	info := Info{
+		RPCErrors:  []ErrorInfo{},
+		DuneErrors: []ErrorInfo{},
+	}
+	if progress != nil {
+		info.LatestBlockNumber = progress.LatestBlockNumber
+		info.IngestedBlockNumber = progress.LastIngestedBlockNumber
+	}
 	ing := &ingester{
 		log:  log.With("module", "ingester"),
 		node: node,
 		dune: dune,
 		cfg:  cfg,
-		info: Info{
-			RPCErrors:  []ErrorInfo{},
-			DuneErrors: []ErrorInfo{},
-		},
+		info: info,
 	}
 	if ing.cfg.PollInterval == 0 {
 		ing.cfg.PollInterval = defaultPollInterval
