@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,8 +24,8 @@ const (
 )
 
 type BlockchainIngester interface {
-	// SendBlock sends a block to DuneAPI
-	SendBlock(ctx context.Context, payload models.RPCBlock) error
+	// SendBlock sends a batch of blocks to DuneAPI
+	SendBlocks(ctx context.Context, payloads []models.RPCBlock) error
 
 	// GetProgressReport gets a progress report from DuneAPI
 	GetProgressReport(ctx context.Context) (*models.BlockchainIndexProgress, error)
@@ -81,42 +82,59 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 }
 
 // SendBlock sends a block to DuneAPI
-func (c *client) SendBlock(ctx context.Context, payload models.RPCBlock) error {
+func (c *client) SendBlocks(ctx context.Context, payloads []models.RPCBlock) error {
 	buffer := c.bufPool.Get().(*bytes.Buffer)
 	defer c.bufPool.Put(buffer)
 
-	request, err := c.buildRequest(payload, buffer)
+	request, err := c.buildRequest(payloads, buffer)
 	if err != nil {
 		return err
 	}
-	return c.sendRequest(ctx, request)
+	return c.sendRequest(ctx, *request)
 }
 
-func (c *client) buildRequest(payload models.RPCBlock, buffer *bytes.Buffer) (BlockchainIngestRequest, error) {
-	var request BlockchainIngestRequest
+func (c *client) buildRequest(payloads []models.RPCBlock, buffer *bytes.Buffer) (*BlockchainIngestRequest, error) {
+	request := &BlockchainIngestRequest{}
 
+	// not thread safe, multiple calls to the compressor here
 	if c.cfg.DisableCompression {
-		request.Payload = payload.Payload
+		buffer.Reset()
+		for _, block := range payloads {
+			_, err := buffer.Write(block.Payload)
+			if err != nil {
+				return nil, err
+			}
+		}
+		request.Payload = buffer.Bytes()
 	} else {
-		// not thread safe, multiple calls to the compressor here
 		buffer.Reset()
 		c.compressor.Reset(buffer)
-		_, err := c.compressor.Write(payload.Payload)
-		if err != nil {
-			return request, err
+		for _, block := range payloads {
+			_, err := c.compressor.Write(block.Payload)
+			if err != nil {
+				return nil, err
+			}
 		}
-		c.compressor.Close()
+		err := c.compressor.Close()
+		if err != nil {
+			return nil, err
+		}
 		request.ContentEncoding = "application/zstd"
 		request.Payload = buffer.Bytes()
 	}
-	request.BlockNumber = payload.BlockNumber
-	request.IdempotencyKey = c.idempotencyKey(payload)
+
+	numbers := make([]string, len(payloads))
+	for i, payload := range payloads {
+		numbers[i] = fmt.Sprintf("%d", payload.BlockNumber)
+	}
+	blockNumbers := strings.Join(numbers, ",")
+	request.BlockNumbers = blockNumbers
+	request.IdempotencyKey = c.idempotencyKey(*request)
 	request.EVMStack = c.cfg.Stack.String()
 	return request, nil
 }
 
 func (c *client) sendRequest(ctx context.Context, request BlockchainIngestRequest) error {
-	// TODO: implement timeouts (context with deadline)
 	start := time.Now()
 	var err error
 	var response BlockchainIngestResponse
@@ -124,15 +142,15 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 	defer func() {
 		if err != nil {
 			c.log.Error("INGEST FAILED",
-				"blockNumber", request.BlockNumber,
+				"blockNumbers", request.BlockNumbers,
 				"error", err,
 				"statusCode", responseStatus,
 				"payloadSize", len(request.Payload),
 				"duration", time.Since(start),
 			)
 		} else {
-			c.log.Info("BLOCK SENT",
-				"blockNumber", request.BlockNumber,
+			c.log.Info("INGEST SUCCESS",
+				"blockNumbers", request.BlockNumbers,
 				"response", response.String(),
 				"payloadSize", len(request.Payload),
 				"duration", time.Since(start),
@@ -153,25 +171,38 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 	req.Header.Set("x-idempotency-key", request.IdempotencyKey)
 	req.Header.Set("x-dune-evm-stack", request.EVMStack)
 	req.Header.Set("x-dune-api-key", c.cfg.APIKey)
+	req.Header.Set("x-dune-batch-size", fmt.Sprintf("%d", request.BatchSize))
 	req = req.WithContext(ctx)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	responseStatus = resp.Status
+
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %v, %v", resp.StatusCode, resp.Status)
+		bs, err := io.ReadAll(resp.Body)
+		responseBody := string(bs)
+		if err != nil {
+			return err
+		}
+		// We mutate the global err here because we have deferred a log message where we check for non-nil err
+		err = fmt.Errorf("unexpected status code: %v, %v with body '%s'", resp.StatusCode, resp.Status, responseBody)
+		return err
 	}
+
 	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
-func (c *client) idempotencyKey(rpcBlock models.RPCBlock) string {
-	// for idempotency we use the block number (should we use also the date?, or a startup timestamp?)
-	return fmt.Sprintf("%v", rpcBlock.BlockNumber)
+func (c *client) idempotencyKey(r BlockchainIngestRequest) string {
+	// for idempotency we use the block numbers in the request
+	// (should we use also the date?, or a startup timestamp?)
+	return r.BlockNumbers
 }
 
 func (c *client) Close() error {
@@ -229,12 +260,10 @@ func (c *client) PostProgressReport(ctx context.Context, progress models.Blockch
 	responseStatus = resp.Status
 
 	if resp.StatusCode != http.StatusOK {
-		bs, err := io.ReadAll(resp.Body)
-		responseBody = string(bs)
-		if err != nil {
-			return err
-		}
-		err = fmt.Errorf("got non-OK response, status code: %s body: %s", responseStatus, responseBody)
+		bs, _ := io.ReadAll(resp.Body)
+		responseBody := string(bs)
+		// We mutate the global err here because we have deferred a log message where we check for non-nil err
+		err = fmt.Errorf("unexpected status code: %v, %v with body '%s'", resp.StatusCode, resp.Status, responseBody)
 		return err
 	}
 
@@ -265,7 +294,7 @@ func (c *client) GetProgressReport(ctx context.Context) (*models.BlockchainIndex
 
 	url := fmt.Sprintf("%s/api/beta/blockchain/%s/ingest/progress", c.cfg.URL, c.cfg.BlockchainName)
 	c.log.Debug("Sending request", "url", url)
-	req, err := retryablehttp.NewRequestWithContext(ctx, "GET", url, nil) // empty body
+	req, err := retryablehttp.NewRequestWithContext(ctx, "GET", url, nil) // nil: empty body
 	if err != nil {
 		return nil, err
 	}
@@ -292,12 +321,10 @@ func (c *client) GetProgressReport(ctx context.Context) (*models.BlockchainIndex
 		}, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		var errorResp errorResponse
-		err = json.Unmarshal(responseBody, &errorResp)
-		if err != nil {
-			return nil, err
-		}
-		err = fmt.Errorf("got non-OK response, status code: %d, body: '%s'", resp.StatusCode, errorResp.Error)
+		bs, _ := io.ReadAll(resp.Body)
+		responseBody := string(bs)
+		// We mutate the global err here because we have deferred a log message where we check for non-nil err
+		err = fmt.Errorf("unexpected status code: %v, %v with body '%s'", resp.StatusCode, resp.Status, responseBody)
 		return nil, err
 	}
 

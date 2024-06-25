@@ -196,7 +196,7 @@ func (i *ingester) trySendCompletedBlocks(
 ) int64 {
 	// Send this block only if we have sent all previous blocks
 	for block, ok := blocks[nextNumberToSend]; ok; block, ok = blocks[nextNumberToSend] {
-		if err := i.dune.SendBlock(ctx, block); err != nil {
+		if err := i.dune.SendBlocks(ctx, []models.RPCBlock{block}); err != nil {
 			if errors.Is(err, context.Canceled) {
 				i.log.Info("SendBlocks: Context canceled, stopping")
 				return nextNumberToSend

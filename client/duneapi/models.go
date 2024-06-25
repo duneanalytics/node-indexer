@@ -23,6 +23,7 @@ type Config struct {
 	DisableCompression bool
 }
 
+// The response from the DuneAPI ingest endpoint.
 type BlockchainIngestResponse struct {
 	Tables []IngestedTableInfo `json:"tables"`
 }
@@ -49,7 +50,8 @@ func (b *BlockchainIngestResponse) String() string {
 }
 
 type BlockchainIngestRequest struct {
-	BlockNumber     int64
+	BlockNumbers    string
+	BatchSize       int // number of blocks in the batch
 	ContentEncoding string
 	EVMStack        string
 	IdempotencyKey  string
@@ -57,14 +59,10 @@ type BlockchainIngestRequest struct {
 }
 
 type BlockchainProgress struct {
-	LastIngestedBlockNumber int64 `json:"last_ingested_block_number"`
-	LatestBlockNumber       int64 `json:"latest_block_number"`
+	LastIngestedBlockNumber int64 `json:"last_ingested_block_number,omitempty"`
+	LatestBlockNumber       int64 `json:"latest_block_number,omitempty"`
 }
 
 func (p *BlockchainProgress) String() string {
 	return fmt.Sprintf("%+v", *p)
-}
-
-type errorResponse struct {
-	Error string `json:"error"`
 }

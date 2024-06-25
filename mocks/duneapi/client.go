@@ -26,8 +26,8 @@ var _ duneapi.BlockchainIngester = &BlockchainIngesterMock{}
 //			PostProgressReportFunc: func(ctx context.Context, progress models.BlockchainIndexProgress) error {
 //				panic("mock out the PostProgressReport method")
 //			},
-//			SendBlockFunc: func(ctx context.Context, payload models.RPCBlock) error {
-//				panic("mock out the SendBlock method")
+//			SendBlocksFunc: func(ctx context.Context, payloads []models.RPCBlock) error {
+//				panic("mock out the SendBlocks method")
 //			},
 //		}
 //
@@ -42,8 +42,8 @@ type BlockchainIngesterMock struct {
 	// PostProgressReportFunc mocks the PostProgressReport method.
 	PostProgressReportFunc func(ctx context.Context, progress models.BlockchainIndexProgress) error
 
-	// SendBlockFunc mocks the SendBlock method.
-	SendBlockFunc func(ctx context.Context, payload models.RPCBlock) error
+	// SendBlocksFunc mocks the SendBlocks method.
+	SendBlocksFunc func(ctx context.Context, payloads []models.RPCBlock) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -59,17 +59,17 @@ type BlockchainIngesterMock struct {
 			// Progress is the progress argument value.
 			Progress models.BlockchainIndexProgress
 		}
-		// SendBlock holds details about calls to the SendBlock method.
-		SendBlock []struct {
+		// SendBlocks holds details about calls to the SendBlocks method.
+		SendBlocks []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// Payload is the payload argument value.
-			Payload models.RPCBlock
+			// Payloads is the payloads argument value.
+			Payloads []models.RPCBlock
 		}
 	}
 	lockGetProgressReport  sync.RWMutex
 	lockPostProgressReport sync.RWMutex
-	lockSendBlock          sync.RWMutex
+	lockSendBlocks         sync.RWMutex
 }
 
 // GetProgressReport calls GetProgressReportFunc.
@@ -140,38 +140,38 @@ func (mock *BlockchainIngesterMock) PostProgressReportCalls() []struct {
 	return calls
 }
 
-// SendBlock calls SendBlockFunc.
-func (mock *BlockchainIngesterMock) SendBlock(ctx context.Context, payload models.RPCBlock) error {
-	if mock.SendBlockFunc == nil {
-		panic("BlockchainIngesterMock.SendBlockFunc: method is nil but BlockchainIngester.SendBlock was just called")
+// SendBlocks calls SendBlocksFunc.
+func (mock *BlockchainIngesterMock) SendBlocks(ctx context.Context, payloads []models.RPCBlock) error {
+	if mock.SendBlocksFunc == nil {
+		panic("BlockchainIngesterMock.SendBlocksFunc: method is nil but BlockchainIngester.SendBlocks was just called")
 	}
 	callInfo := struct {
-		Ctx     context.Context
-		Payload models.RPCBlock
+		Ctx      context.Context
+		Payloads []models.RPCBlock
 	}{
-		Ctx:     ctx,
-		Payload: payload,
+		Ctx:      ctx,
+		Payloads: payloads,
 	}
-	mock.lockSendBlock.Lock()
-	mock.calls.SendBlock = append(mock.calls.SendBlock, callInfo)
-	mock.lockSendBlock.Unlock()
-	return mock.SendBlockFunc(ctx, payload)
+	mock.lockSendBlocks.Lock()
+	mock.calls.SendBlocks = append(mock.calls.SendBlocks, callInfo)
+	mock.lockSendBlocks.Unlock()
+	return mock.SendBlocksFunc(ctx, payloads)
 }
 
-// SendBlockCalls gets all the calls that were made to SendBlock.
+// SendBlocksCalls gets all the calls that were made to SendBlocks.
 // Check the length with:
 //
-//	len(mockedBlockchainIngester.SendBlockCalls())
-func (mock *BlockchainIngesterMock) SendBlockCalls() []struct {
-	Ctx     context.Context
-	Payload models.RPCBlock
+//	len(mockedBlockchainIngester.SendBlocksCalls())
+func (mock *BlockchainIngesterMock) SendBlocksCalls() []struct {
+	Ctx      context.Context
+	Payloads []models.RPCBlock
 } {
 	var calls []struct {
-		Ctx     context.Context
-		Payload models.RPCBlock
+		Ctx      context.Context
+		Payloads []models.RPCBlock
 	}
-	mock.lockSendBlock.RLock()
-	calls = mock.calls.SendBlock
-	mock.lockSendBlock.RUnlock()
+	mock.lockSendBlocks.RLock()
+	calls = mock.calls.SendBlocks
+	mock.lockSendBlocks.RUnlock()
 	return calls
 }

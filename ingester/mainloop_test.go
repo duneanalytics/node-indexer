@@ -25,7 +25,12 @@ func TestRunLoopUntilCancel(t *testing.T) {
 	sentBlockNumber := int64(0)
 	producedBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
-		SendBlockFunc: func(_ context.Context, block models.RPCBlock) error {
+		SendBlocksFunc: func(_ context.Context, blocks []models.RPCBlock) error {
+			if len(blocks) != 1 {
+				panic("expected 1 block")
+			}
+			block := blocks[0]
+
 			atomic.StoreInt64(&sentBlockNumber, block.BlockNumber)
 			if block.BlockNumber == maxBlockNumber {
 				// cancel execution when we send the last block
@@ -68,7 +73,7 @@ func TestRunLoopUntilCancel(t *testing.T) {
 
 func TestProduceBlockNumbers(t *testing.T) {
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
-		SendBlockFunc: func(_ context.Context, _ models.RPCBlock) error {
+		SendBlocksFunc: func(_ context.Context, _ []models.RPCBlock) error {
 			return nil
 		},
 		PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
@@ -107,7 +112,12 @@ func TestProduceBlockNumbers(t *testing.T) {
 func TestSendBlocks(t *testing.T) {
 	sentBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
-		SendBlockFunc: func(_ context.Context, block models.RPCBlock) error {
+		SendBlocksFunc: func(_ context.Context, blocks []models.RPCBlock) error {
+			if len(blocks) != 1 {
+				panic("expected 1 block")
+			}
+			block := blocks[0]
+
 			// DuneAPI must fail if it receives blocks out of order
 			if block.BlockNumber != sentBlockNumber+1 {
 				return errors.Errorf("blocks out of order")
@@ -157,7 +167,12 @@ func TestRunLoopBlocksOutOfOrder(t *testing.T) {
 	sentBlockNumber := int64(0)
 	producedBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
-		SendBlockFunc: func(_ context.Context, block models.RPCBlock) error {
+		SendBlocksFunc: func(_ context.Context, blocks []models.RPCBlock) error {
+			if len(blocks) != 1 {
+				panic("expected 1 block")
+			}
+			block := blocks[0]
+
 			// Test must fail if DuneAPI receives blocks out of order
 			require.Equal(t, block.BlockNumber, sentBlockNumber+1)
 
