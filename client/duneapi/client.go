@@ -153,7 +153,7 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 				"duration", time.Since(start),
 			)
 		} else {
-			c.log.Info("INGEST SUCCESS",
+			c.log.Debug("INGEST SUCCESS",
 				"blockNumbers", request.BlockNumbers,
 				"response", response.String(),
 				"payloadSize", len(request.Payload),
@@ -192,6 +192,11 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 		}
 		// We mutate the global err here because we have deferred a log message where we check for non-nil err
 		err = fmt.Errorf("unexpected status code: %v, %v with body '%s'", resp.StatusCode, resp.Status, responseBody)
+		return err
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
 		return err
 	}
 

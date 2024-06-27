@@ -37,7 +37,7 @@ func NewOpStackClient(log *slog.Logger, cfg Config) (*OpStackClient, error) {
 func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (models.RPCBlock, error) {
 	tStart := time.Now()
 	defer func() {
-		c.log.Info("BlockByNumber",
+		c.log.Debug("BlockByNumber",
 			"blockNumber", blockNumber,
 			"duration", time.Since(tStart),
 		)
