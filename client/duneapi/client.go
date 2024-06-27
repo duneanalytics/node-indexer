@@ -248,7 +248,7 @@ func (c *client) PostProgressReport(ctx context.Context, progress models.Blockch
 	if err != nil {
 		return err
 	}
-	c.log.Info("Sending request", "url", url, "payload", string(payload))
+	c.log.Debug("Sending request", "url", url, "payload", string(payload))
 	req, err := retryablehttp.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
 	if err != nil {
 		return err
