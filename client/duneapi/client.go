@@ -58,7 +58,11 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 	checkRetry := func(ctx context.Context, resp *http.Response, err error) (bool, error) {
 		yes, err2 := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 		if yes {
-			log.Warn("Retrying request", "statusCode", resp.Status, "error", err)
+			var statusCode string
+			if resp != nil {
+				statusCode = resp.Status
+			}
+			log.Warn("Retrying request", "statusCode", statusCode, "error", err)
 		}
 		return yes, err2
 	}
