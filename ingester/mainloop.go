@@ -215,6 +215,8 @@ func (i *ingester) trySendCompletedBlocks(
 	collectedBlocks map[int64]models.RPCBlock,
 	nextBlockToSend int64,
 ) (int64, error) {
+	initialNextBlockToSend := nextBlockToSend
+	startTime := time.Now()
 	// Outer loop: We might need to send multiple batch requests if our buffer is too big
 	for _, ok := collectedBlocks[nextBlockToSend]; ok; _, ok = collectedBlocks[nextBlockToSend] {
 		// Collect a blocks of blocks to send, only send those which are in order
@@ -258,9 +260,11 @@ func (i *ingester) trySendCompletedBlocks(
 		atomic.StoreInt64(&i.info.IngestedBlockNumber, lastBlockNumber)
 	}
 	i.log.Info(
-		"Sent completed blocks to DuneAPI",
+		"Sent blocks to DuneAPI",
+		"blocksSent", nextBlockToSend-initialNextBlockToSend,
 		"bufferSize", len(collectedBlocks),
 		"nextBlockToSend", nextBlockToSend,
+		"elapsed", time.Since(startTime),
 	)
 	return nextBlockToSend, nil
 }
