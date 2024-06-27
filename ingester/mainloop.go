@@ -3,7 +3,6 @@ package ingester
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -138,21 +137,16 @@ func (i *ingester) FetchBlockLoop(
 					return ctx.Err()
 				}
 
-				i.log.Error("Failed to get block by number, continuing..",
+				i.log.Error("Failed to get block by number",
 					"blockNumber", blockNumber,
+					"continueing", i.cfg.SkipFailedBlocks,
+					"elapsed", time.Since(startTime),
 					"error", err,
 				)
-				i.info.RPCErrors = append(i.info.RPCErrors, ErrorInfo{
-					Timestamp:    time.Now(),
-					BlockNumbers: fmt.Sprintf("%d", blockNumber),
-					Error:        err,
-				})
-
 				if !i.cfg.SkipFailedBlocks {
 					return err
 				}
-				// We need to send an empty block downstream to indicate that this failed
-				blocks <- models.RPCBlock{BlockNumber: blockNumber}
+				blocks <- models.RPCBlock{BlockNumber: blockNumber, Error: err}
 				continue
 			}
 
@@ -195,13 +189,14 @@ func (i *ingester) SendBlocks(ctx context.Context, blocks <-chan models.RPCBlock
 				return nil
 			}
 
-			if block.Empty() {
-				// We got an empty block from the RPC client goroutine, either fail or send an empty block downstream
-				if !i.cfg.SkipFailedBlocks {
-					i.log.Info("Received empty block, exiting", "number", block.BlockNumber)
-					return errors.Errorf("empty block received")
-				}
-				i.log.Info("Received empty block", "number", block.BlockNumber)
+			if block.Errored() {
+				i.info.RPCErrors = append(i.info.RPCErrors, ErrorInfo{
+					Timestamp:    time.Now(),
+					BlockNumbers: fmt.Sprintf("%d", block.BlockNumber),
+					Error:        block.Error,
+				})
+
+				i.log.Info("Received FAILED block", "number", block.BlockNumber)
 			}
 
 			collectedBlocks[block.BlockNumber] = block
@@ -234,67 +229,49 @@ func (i *ingester) trySendCompletedBlocks(
 	// Outer loop: We might need to send multiple batch requests if our buffer is too big
 	for _, ok := collectedBlocks[nextNumberToSend]; ok; _, ok = collectedBlocks[nextNumberToSend] {
 		// Collect a blocks of blocks to send, only send those which are in order
-		blocks := make([]models.RPCBlock, 0, len(collectedBlocks))
+		// Collect a batch to send, only send those which are in order
+		blockBatch := make([]models.RPCBlock, 0, maxBatchSize)
 		for block, ok := collectedBlocks[nextNumberToSend]; ok; block, ok = collectedBlocks[nextNumberToSend] {
-			// Skip block if it's empty and we're configured to skip empty blocks
-			if i.cfg.SkipFailedBlocks && block.Empty() {
+			// Skip Failed block if we're configured to skip Failed blocks
+			if i.cfg.SkipFailedBlocks && block.Errored() {
 				nextNumberToSend++
 				continue
 			}
 
-			blocks = append(blocks, block)
+			blockBatch = append(blockBatch, block)
 			delete(collectedBlocks, nextNumberToSend)
 			nextNumberToSend++
-			// Don't send more than maxBatchSize blocks
-			if len(blocks) == maxBatchSize {
+
+			if len(blockBatch) == maxBatchSize {
 				break
 			}
 		}
 
-		if len(blocks) == 0 {
+		if len(blockBatch) == 0 {
 			return nextNumberToSend, nil
 		}
 
 		// Send the batch
-		lastBlockNumber := blocks[len(blocks)-1].BlockNumber
+		lastBlockNumber := blockBatch[len(blockBatch)-1].BlockNumber
 		if lastBlockNumber != nextNumberToSend-1 {
 			panic("unexpected last block number")
 		}
-		if err := i.dune.SendBlocks(ctx, blocks); err != nil {
+		if err := i.dune.SendBlocks(ctx, blockBatch); err != nil {
 			if errors.Is(err, context.Canceled) {
 				i.log.Info("SendBlocks: Context canceled, stopping")
 				return nextNumberToSend, nil
 			}
-			if !i.cfg.SkipFailedBlocks {
-				err := errors.Errorf("failed to send batch: %w", err)
-				i.log.Error("SendBlocks: Failed to send batch, exiting", "error", err)
-				return nextNumberToSend, err
-			}
-			// this will leave a "block gap" in DuneAPI, TODO: implement a way to fill this gap
-			i.log.Error(
-				"SendBlocks: Failed to send batch, continuing",
-				"blockNumberFirst", blocks[0].BlockNumber,
-				"blockNumberLast", blocks[len(blocks)-1].BlockNumber,
-				"error", err,
-			)
-			blockNumbers := make([]string, len(blocks))
-			for i, block := range blocks {
-				blockNumbers[i] = fmt.Sprintf("%d", block.BlockNumber)
-			}
-			i.info.DuneErrors = append(i.info.DuneErrors, ErrorInfo{
-				Timestamp:    time.Now(),
-				BlockNumbers: strings.Join(blockNumbers, ","),
-				Error:        err,
-			})
-			continue
+			// TODO: handle errors of duneAPI, save the blockRange impacted and report this back for later retries
+			err := errors.Errorf("failed to send batch: %w", err)
+			i.log.Error("SendBlocks: Failed to send batch, exiting", "error", err)
+			return nextNumberToSend, err
 		}
 		i.log.Info(
 			"SendBlocks: Sent batch, updating latest ingested block number",
-			"blockNumberFirst", blocks[0].BlockNumber,
+			"blockNumberFirst", blockBatch[0].BlockNumber,
 			"blockNumberLast", lastBlockNumber,
-			"batchSize", len(blocks),
+			"batchSize", len(blockBatch),
 		)
-
 		atomic.StoreInt64(&i.info.IngestedBlockNumber, lastBlockNumber)
 	}
 

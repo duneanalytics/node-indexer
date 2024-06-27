@@ -202,7 +202,7 @@ func TestRunBlocksUseBatching(t *testing.T) {
 			}
 
 			// Fail if we're not sending a batch of blocks
-			require.Len(t, blocks, 1)
+			require.Greater(t, len(blocks), 1)
 
 			next := sentBlockNumber + 1
 			for _, block := range blocks {
