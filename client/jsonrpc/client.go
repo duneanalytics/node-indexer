@@ -37,9 +37,21 @@ func NewClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:dis
 	client := retryablehttp.NewClient()
 	client.RetryMax = MaxRetries
 	client.Logger = log
-	client.CheckRetry = retryablehttp.DefaultRetryPolicy
+	checkRetry := func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+		yes, err2 := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
+		if yes {
+			if resp == nil {
+				log.Warn("Retrying request", "error", err)
+			} else {
+				log.Warn("Retrying request", "statusCode", resp.Status, "error", err)
+			}
+		}
+		return yes, err2
+	}
+	client.CheckRetry = checkRetry
 	client.Backoff = retryablehttp.LinearJitterBackoff
 	client.HTTPClient.Timeout = DefaultRequestTimeout
+
 	rpc := &rpcClient{
 		client: client,
 		cfg:    cfg,
