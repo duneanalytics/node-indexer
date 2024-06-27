@@ -11,6 +11,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const maxBatchSize = 100
+
 // Run fetches blocks from a node RPC and sends them in order to the Dune API.
 //
 // ProduceBlockNumbers (blockNumbers channel) -> FetchBlockLoop (blocks channel) -> SendBlocks -> Dune
@@ -29,7 +31,7 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int
 
 	// We buffer the block channel so that RPC requests can be made concurrently with sending blocks to Dune.
 	// We limit the buffer size to the same number of concurrent requests, so we exert some backpressure.
-	blocks := make(chan models.RPCBlock, i.cfg.MaxConcurrentRequests)
+	blocks := make(chan models.RPCBlock, maxBatchSize)
 	defer close(blocks)
 
 	// Start MaxBatchSize goroutines to consume blocks concurrently
@@ -215,8 +217,6 @@ func (i *ingester) SendBlocks(ctx context.Context, blocks <-chan models.RPCBlock
 		}
 	}
 }
-
-const maxBatchSize = 100
 
 // trySendCompletedBlocks sends all blocks that can be sent in order from the blockMap.
 // Once we have sent all blocks, if any, we return with the nextNumberToSend.
