@@ -59,7 +59,11 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 	checkRetry := func(ctx context.Context, resp *http.Response, err error) (bool, error) {
 		yes, err2 := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 		if yes {
-			log.Warn("Retrying request", "statusCode", resp.Status, "error", err)
+			if resp == nil {
+				log.Warn("Retrying request", "error", err)
+			} else {
+				log.Warn("Retrying request", "statusCode", resp.Status, "error", err)
+			}
 		}
 		return yes, err2
 	}
@@ -191,11 +195,6 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 		return err
 	}
 
-	err = json.NewDecoder(resp.Body).Decode(&response)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -220,7 +219,7 @@ func (c *client) PostProgressReport(ctx context.Context, progress models.Blockch
 	defer func() {
 		if err != nil {
 			c.log.Error("Sending progress report failed",
-				"lastIngestedBlockNumer", request.LastIngestedBlockNumber,
+				"lastIngestedBlockNumber", request.LastIngestedBlockNumber,
 				"error", err,
 				"statusCode", responseStatus,
 				"duration", time.Since(start),
@@ -228,7 +227,7 @@ func (c *client) PostProgressReport(ctx context.Context, progress models.Blockch
 			)
 		} else {
 			c.log.Info("Sent progress report",
-				"lastIngestedBlockNumer", request.LastIngestedBlockNumber,
+				"lastIngestedBlockNumber", request.LastIngestedBlockNumber,
 				"latestBlockNumber", request.LatestBlockNumber,
 				"duration", time.Since(start),
 			)

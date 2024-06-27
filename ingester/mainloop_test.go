@@ -19,24 +19,32 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func TestRunLoopUntilCancel(t *testing.T) {
+func TestRunUntilCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	maxBlockNumber := int64(10)
 	sentBlockNumber := int64(0)
 	producedBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
 		SendBlocksFunc: func(_ context.Context, blocks []models.RPCBlock) error {
-			if len(blocks) != 1 {
-				panic("expected 1 block")
+			if len(blocks) == 0 {
+				return nil
 			}
-			block := blocks[0]
 
-			atomic.StoreInt64(&sentBlockNumber, block.BlockNumber)
-			if block.BlockNumber == maxBlockNumber {
-				// cancel execution when we send the last block
+			next := sentBlockNumber + 1
+			for _, block := range blocks {
+				// We cannot send blocks out of order to DuneAPI
+				require.Equalf(t, next, block.BlockNumber, "expected block %d, got %d", next, block.BlockNumber)
+				next++
+			}
+
+			lastBlockNumber := blocks[len(blocks)-1].BlockNumber
+			atomic.StoreInt64(&sentBlockNumber, lastBlockNumber)
+			if lastBlockNumber >= maxBlockNumber {
+				// cancel execution when we have sent the last block
 				cancel()
 				return context.Canceled
 			}
+
 			return nil
 		},
 		PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
@@ -61,21 +69,25 @@ func TestRunLoopUntilCancel(t *testing.T) {
 	// Swap these to see logs
 	// logOutput := os.Stderr
 	logOutput := io.Discard
-	ing := ingester.New(slog.New(slog.NewTextHandler(logOutput, nil)), rpcClient, duneapi, ingester.Config{
-		MaxBatchSize: 1,
-		PollInterval: 1000 * time.Millisecond,
-	})
+	ing := ingester.New(
+		slog.New(slog.NewTextHandler(logOutput, nil)),
+		rpcClient,
+		duneapi,
+		ingester.Config{
+			BlockSubmitInterval:   time.Nanosecond,
+			MaxConcurrentRequests: 10,
+			SkipFailedBlocks:      false,
+		},
+		nil, // progress
+	)
 
 	err := ing.Run(ctx, 1, -1)                // run until canceled
 	require.ErrorIs(t, err, context.Canceled) // this is expected
-	require.Equal(t, sentBlockNumber, maxBlockNumber)
+	require.GreaterOrEqual(t, sentBlockNumber, maxBlockNumber)
 }
 
 func TestProduceBlockNumbers(t *testing.T) {
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
-		SendBlocksFunc: func(_ context.Context, _ []models.RPCBlock) error {
-			return nil
-		},
 		PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
 			return nil
 		},
@@ -91,11 +103,18 @@ func TestProduceBlockNumbers(t *testing.T) {
 			return nil
 		},
 	}
+	// Swap these to see logs
 	logOutput := io.Discard
-	ing := ingester.New(slog.New(slog.NewTextHandler(logOutput, nil)), rpcClient, duneapi, ingester.Config{
-		MaxBatchSize: 1,
-		PollInterval: 1000 * time.Millisecond,
-	})
+	// logOutput := os.Stderr
+	ing := ingester.New(
+		slog.New(slog.NewTextHandler(logOutput, nil)),
+		rpcClient,
+		duneapi,
+		ingester.Config{
+			BlockSubmitInterval: time.Nanosecond,
+		},
+		nil, // progress
+	)
 	blockNumbers := make(chan int64)
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -113,45 +132,57 @@ func TestSendBlocks(t *testing.T) {
 	sentBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
 		SendBlocksFunc: func(_ context.Context, blocks []models.RPCBlock) error {
-			if len(blocks) != 1 {
-				panic("expected 1 block")
+			if len(blocks) == 0 {
+				return nil
 			}
-			block := blocks[0]
 
-			// DuneAPI must fail if it receives blocks out of order
-			if block.BlockNumber != sentBlockNumber+1 {
-				return errors.Errorf("blocks out of order")
+			next := sentBlockNumber + 1
+			for _, block := range blocks {
+				// We cannot send blocks out of order to DuneAPI
+				require.Equalf(t, next, block.BlockNumber, "expected block %d, got %d", next, block.BlockNumber)
+				next++
 			}
-			atomic.StoreInt64(&sentBlockNumber, block.BlockNumber)
-			return nil
-		},
-		PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
+
+			lastBlockNumber := blocks[len(blocks)-1].BlockNumber
+			atomic.StoreInt64(&sentBlockNumber, lastBlockNumber)
 			return nil
 		},
 	}
+	// Swap these to see logs
 	// logOutput := os.Stderr
 	logOutput := io.Discard
-	ing := ingester.New(slog.New(slog.NewTextHandler(logOutput, nil)), nil, duneapi, ingester.Config{
-		MaxBatchSize: 10, // this won't matter as we only run SendBlocks
-		PollInterval: 1000 * time.Millisecond,
-	})
+	ing := ingester.New(
+		slog.New(slog.NewTextHandler(logOutput, nil)),
+		nil, // node client isn't used in this unit test
+		duneapi,
+		ingester.Config{
+			BlockSubmitInterval: time.Nanosecond,
+		},
+		nil, // progress
+	)
 
 	blocks := make(chan models.RPCBlock)
 
 	startFromBlock := 1
 
-	group, _ := errgroup.WithContext(context.Background())
+	group, ctx := errgroup.WithContext(context.Background())
 	group.Go(func() error {
 		return ing.SendBlocks(context.Background(), blocks, int64(startFromBlock))
 	})
 
 	// Send blocks except the next block, ensure none are sent to the API
 	for _, n := range []int64{2, 3, 4, 5, 10} {
-		blocks <- models.RPCBlock{BlockNumber: n}
+		select {
+		case <-ctx.Done(): // if error group fails, its context is canceled
+			require.Fail(t, "context was canceled")
+		case blocks <- models.RPCBlock{BlockNumber: n, Payload: []byte("block")}:
+			// Sent block
+		}
 		require.Equal(t, int64(0), sentBlockNumber)
 	}
 	// Now send the first block
-	blocks <- models.RPCBlock{BlockNumber: 1}
+	blocks <- models.RPCBlock{BlockNumber: 1, Payload: []byte("block")}
+	time.Sleep(time.Millisecond) // Allow enough time for the tick before closing the channel
 	close(blocks)
 	require.NoError(t, group.Wait())
 
@@ -159,29 +190,35 @@ func TestSendBlocks(t *testing.T) {
 	require.Equal(t, int64(5), sentBlockNumber)
 }
 
-// TestRunLoopBlocksOutOfOrder asserts that we can fetch blocks concurrently and that we ingest them in order
-// even if they are produced out of order. We ensure they are produced out of order by sleeping a random amount of time.
-func TestRunLoopBlocksOutOfOrder(t *testing.T) {
+func TestRunBlocksUseBatching(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	maxBlockNumber := int64(1000)
 	sentBlockNumber := int64(0)
 	producedBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
 		SendBlocksFunc: func(_ context.Context, blocks []models.RPCBlock) error {
-			if len(blocks) != 1 {
-				panic("expected 1 block")
+			if len(blocks) == 0 {
+				return nil
 			}
-			block := blocks[0]
 
-			// Test must fail if DuneAPI receives blocks out of order
-			require.Equal(t, block.BlockNumber, sentBlockNumber+1)
+			// Fail if we're not sending a batch of blocks
+			require.Greater(t, len(blocks), 1)
 
-			atomic.StoreInt64(&sentBlockNumber, block.BlockNumber)
-			if block.BlockNumber == maxBlockNumber {
-				// cancel execution when we send the last block
+			next := sentBlockNumber + 1
+			for _, block := range blocks {
+				// We cannot send blocks out of order to DuneAPI
+				require.Equalf(t, next, block.BlockNumber, "expected block %d, got %d", next, block.BlockNumber)
+				next++
+			}
+
+			lastBlockNumber := blocks[len(blocks)-1].BlockNumber
+			atomic.StoreInt64(&sentBlockNumber, lastBlockNumber)
+			if lastBlockNumber >= maxBlockNumber {
+				// cancel execution when we have sent the last block
 				cancel()
 				return context.Canceled
 			}
+
 			return nil
 		},
 		PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
@@ -193,10 +230,9 @@ func TestRunLoopBlocksOutOfOrder(t *testing.T) {
 			return maxBlockNumber + 1, nil
 		},
 		BlockByNumberFunc: func(_ context.Context, blockNumber int64) (models.RPCBlock, error) {
-			// Get blocks out of order by sleeping for a random amount of ms
-			time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
+			// Get blocks out of order by sleeping for a random amount of time
 			atomic.StoreInt64(&producedBlockNumber, blockNumber)
-			return models.RPCBlock{BlockNumber: blockNumber}, nil
+			return models.RPCBlock{BlockNumber: blockNumber, Payload: []byte("block")}, nil
 		},
 		CloseFunc: func() error {
 			return nil
@@ -205,12 +241,154 @@ func TestRunLoopBlocksOutOfOrder(t *testing.T) {
 	// Swap these to see logs
 	// logOutput := os.Stderr
 	logOutput := io.Discard
-	ing := ingester.New(slog.New(slog.NewTextHandler(logOutput, nil)), rpcClient, duneapi, ingester.Config{
-		MaxBatchSize: 10, // fetch blocks in multiple goroutines
-		PollInterval: 1000 * time.Millisecond,
-	})
+	ing := ingester.New(
+		slog.New(slog.NewTextHandler(logOutput, nil)),
+		rpcClient,
+		duneapi,
+		ingester.Config{
+			MaxConcurrentRequests: 20, // fetch blocks in multiple goroutines
+			// big enough compared to the time spent in block by number to ensure batching. We panic
+			// in the mocked Dune client if we don't get a batch of blocks (more than one block).
+			BlockSubmitInterval: 50 * time.Millisecond,
+			SkipFailedBlocks:    false,
+		},
+		nil, // progress
+	)
 
 	err := ing.Run(ctx, 1, -1)                // run until canceled
 	require.ErrorIs(t, err, context.Canceled) // this is expected
-	require.Equal(t, sentBlockNumber, maxBlockNumber)
+	require.GreaterOrEqual(t, sentBlockNumber, maxBlockNumber)
+}
+
+// TestRunBlocksOutOfOrder asserts that we can fetch blocks concurrently and that we ingest them in order
+// even if they are produced out of order. We ensure they are produced out of order by sleeping a random amount of time.
+func TestRunBlocksOutOfOrder(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	maxBlockNumber := int64(1000)
+	sentBlockNumber := int64(0)
+	producedBlockNumber := int64(0)
+	duneapi := &duneapi_mock.BlockchainIngesterMock{
+		SendBlocksFunc: func(_ context.Context, blocks []models.RPCBlock) error {
+			if len(blocks) == 0 {
+				return nil
+			}
+
+			next := sentBlockNumber + 1
+			for _, block := range blocks {
+				// We cannot send blocks out of order to DuneAPI
+				require.Equalf(t, next, block.BlockNumber, "expected block %d, got %d", next, block.BlockNumber)
+				next++
+			}
+
+			lastBlockNumber := blocks[len(blocks)-1].BlockNumber
+			atomic.StoreInt64(&sentBlockNumber, lastBlockNumber)
+			if lastBlockNumber >= maxBlockNumber {
+				// cancel execution when we have sent the last block
+				cancel()
+				return context.Canceled
+			}
+
+			return nil
+		},
+		PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
+			return nil
+		},
+	}
+	rpcClient := &jsonrpc_mock.BlockchainClientMock{
+		LatestBlockNumberFunc: func() (int64, error) {
+			return maxBlockNumber + 1, nil
+		},
+		BlockByNumberFunc: func(_ context.Context, blockNumber int64) (models.RPCBlock, error) {
+			// Get blocks out of order by sleeping for a random amount of time
+			time.Sleep(time.Duration(rand.Intn(10)) * time.Nanosecond)
+			atomic.StoreInt64(&producedBlockNumber, blockNumber)
+			return models.RPCBlock{BlockNumber: blockNumber, Payload: []byte("block")}, nil
+		},
+		CloseFunc: func() error {
+			return nil
+		},
+	}
+	// Swap these to see logs
+	// logOutput := os.Stderr
+	logOutput := io.Discard
+	ing := ingester.New(
+		slog.New(slog.NewTextHandler(logOutput, nil)),
+		rpcClient,
+		duneapi,
+		ingester.Config{
+			MaxConcurrentRequests: 20, // fetch blocks in multiple goroutines
+			// big enough compared to the time spent in block by number to ensure batching. We panic
+			// in the mocked Dune client if we don't get a batch of blocks (more than one block).
+			BlockSubmitInterval: 50 * time.Millisecond,
+			SkipFailedBlocks:    false,
+		},
+		nil, // progress
+	)
+
+	err := ing.Run(ctx, 1, -1)                // run until canceled
+	require.ErrorIs(t, err, context.Canceled) // this is expected
+	require.GreaterOrEqual(t, sentBlockNumber, maxBlockNumber)
+}
+
+// TestRunRPCNodeFails shows that we crash if the RPC client fails to fetch a block
+func TestRunRPCNodeFails(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	maxBlockNumber := int64(1000)
+	someRPCError := errors.Errorf("some RPC error")
+	duneapi := &duneapi_mock.BlockchainIngesterMock{
+		SendBlocksFunc: func(_ context.Context, _ []models.RPCBlock) error {
+			return nil
+		},
+		PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
+			return nil
+		},
+	}
+	rpcClient := &jsonrpc_mock.BlockchainClientMock{
+		LatestBlockNumberFunc: func() (int64, error) {
+			return maxBlockNumber + 1, nil
+		},
+		BlockByNumberFunc: func(_ context.Context, _ int64) (models.RPCBlock, error) {
+			// Get blocks out of order by sleeping for a random amount of time
+			time.Sleep(time.Duration(rand.Intn(10)) * time.Nanosecond)
+			return models.RPCBlock{}, someRPCError
+		},
+		CloseFunc: func() error {
+			return nil
+		},
+	}
+	// Swap these to see logs
+	// logOutput := os.Stderr
+	logOutput := io.Discard
+	ing := ingester.New(
+		slog.New(slog.NewTextHandler(logOutput, nil)),
+		rpcClient,
+		duneapi,
+		ingester.Config{
+			MaxConcurrentRequests: 10,
+			BlockSubmitInterval:   time.Millisecond,
+			SkipFailedBlocks:      false,
+		},
+		nil, // progress
+	)
+
+	err := ing.Run(ctx, 1, -1) // run until canceled
+	require.ErrorIs(t, err, someRPCError)
+}
+
+// TestRunRPCNodeFails shows that we crash if the RPC client fails to fetch a block
+func TestRunFailsIfNoConcurrentRequests(t *testing.T) {
+	logOutput := io.Discard
+	ing := ingester.New(
+		slog.New(slog.NewTextHandler(logOutput, nil)),
+		nil,
+		nil,
+		ingester.Config{
+			MaxConcurrentRequests: 0,
+		},
+		nil, // progress
+	)
+
+	err := ing.Run(context.Background(), 1, -1) // run until canceled
+	require.ErrorContains(t, err, "MaxConcurrentRequests must be > 0")
 }

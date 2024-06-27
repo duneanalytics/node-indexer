@@ -65,8 +65,9 @@ func main() {
 	// Get stored progress unless config indicates we should start from 0
 	var startBlockNumber int64
 	// Default to -1 to start where the ingester left off
+	var progress *models.BlockchainIndexProgress
 	if cfg.BlockHeight == -1 {
-		progress, err := duneClient.GetProgressReport(ctx)
+		progress, err = duneClient.GetProgressReport(ctx)
 		if err != nil {
 			stdlog.Fatal(err)
 		} else {
@@ -82,12 +83,15 @@ func main() {
 		rpcClient,
 		duneClient,
 		ingester.Config{
-			MaxBatchSize:           cfg.Concurrency,
+			MaxConcurrentRequests:  cfg.RPCConcurrency,
 			ReportProgressInterval: cfg.ReportProgressInterval,
 			PollInterval:           cfg.PollInterval,
 			Stack:                  cfg.RPCStack,
 			BlockchainName:         cfg.BlockchainName,
+			BlockSubmitInterval:    cfg.BlockSubmitInterval,
+			SkipFailedBlocks:       cfg.SkipFailedBlocks,
 		},
+		progress,
 	)
 
 	wg.Add(1)
