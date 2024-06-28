@@ -41,5 +41,5 @@ $ BLOCKCHAIN_NAME='foo' RPC_NODE_URL='http://localhost:8545' DUNE_API_KEY='your-
 
 You can see all the configuration options by using the `--help` argument:
 ```bash
-docker run duneanalytics/node-indexer ./indexer --help
+docker run duneanalytics/node-indexer --help
 ```
