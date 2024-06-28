@@ -212,15 +212,20 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 			previousIngested = lastIngested
 			previousTime = tNow
 
-			// TODO: include errors in the report, reset the error list
 			err := i.dune.PostProgressReport(ctx, models.BlockchainIndexProgress{
 				BlockchainName:          i.cfg.BlockchainName,
 				EVMStack:                i.cfg.Stack.String(),
 				LastIngestedBlockNumber: lastIngested,
 				LatestBlockNumber:       latest,
+				Errors:                  i.info.Errors(),
 			})
 			if err != nil {
 				i.log.Error("Failed to post progress report", "error", err)
+			} else {
+				i.log.Debug("Posted progress report")
+				// Reset errors after reporting
+				i.info.RPCErrors = []ErrorInfo{}
+				i.info.DuneErrors = []ErrorInfo{}
 			}
 		}
 	}

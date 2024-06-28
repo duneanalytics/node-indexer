@@ -60,9 +60,9 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 		yes, err2 := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 		if yes {
 			if resp == nil {
-				log.Warn("Retrying request", "error", err)
+				log.Warn("Retrying request to Dune API", "error", err)
 			} else {
-				log.Warn("Retrying request", "statusCode", resp.Status, "error", err)
+				log.Warn("Retrying request to Dune API", "statusCode", resp.Status, "error", err)
 			}
 		}
 		return yes, err2
@@ -214,7 +214,7 @@ func (c *client) Close() error {
 }
 
 func (c *client) PostProgressReport(ctx context.Context, progress models.BlockchainIndexProgress) error {
-	var request BlockchainProgress
+	var request PostBlockchainProgressRequest
 	var err error
 	var responseStatus string
 	var responseBody string
@@ -234,14 +234,25 @@ func (c *client) PostProgressReport(ctx context.Context, progress models.Blockch
 			c.log.Info("Sent progress report",
 				"lastIngestedBlockNumber", request.LastIngestedBlockNumber,
 				"latestBlockNumber", request.LatestBlockNumber,
+				"errors", len(request.Errors),
 				"duration", time.Since(start),
 			)
 		}
 	}()
 
-	request = BlockchainProgress{
+	errors := make([]BlockchainError, len(progress.Errors))
+	for i, e := range progress.Errors {
+		errors[i] = BlockchainError{
+			Timestamp:    e.Timestamp,
+			BlockNumbers: e.BlockNumbers,
+			Error:        e.Error,
+			Source:       e.Source,
+		}
+	}
+	request = PostBlockchainProgressRequest{
 		LastIngestedBlockNumber: progress.LastIngestedBlockNumber,
 		LatestBlockNumber:       progress.LatestBlockNumber,
+		Errors:                  errors,
 	}
 	url := fmt.Sprintf("%s/api/beta/blockchain/%s/ingest/progress", c.cfg.URL, c.cfg.BlockchainName)
 	payload, err := json.Marshal(request)
@@ -275,7 +286,7 @@ func (c *client) PostProgressReport(ctx context.Context, progress models.Blockch
 }
 
 func (c *client) GetProgressReport(ctx context.Context) (*models.BlockchainIndexProgress, error) {
-	var response BlockchainProgress
+	var response GetBlockchainProgressResponse
 	var err error
 	var responseStatus string
 	start := time.Now()

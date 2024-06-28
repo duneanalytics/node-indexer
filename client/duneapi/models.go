@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/models"
 )
@@ -58,11 +59,24 @@ type BlockchainIngestRequest struct {
 	Payload         []byte
 }
 
-type BlockchainProgress struct {
+type GetBlockchainProgressResponse struct {
 	LastIngestedBlockNumber int64 `json:"last_ingested_block_number,omitempty"`
 	LatestBlockNumber       int64 `json:"latest_block_number,omitempty"`
 }
 
-func (p *BlockchainProgress) String() string {
+func (p *GetBlockchainProgressResponse) String() string {
 	return fmt.Sprintf("%+v", *p)
+}
+
+type PostBlockchainProgressRequest struct {
+	LastIngestedBlockNumber int64             `json:"last_ingested_block_number,omitempty"`
+	LatestBlockNumber       int64             `json:"latest_block_number,omitempty"`
+	Errors                  []BlockchainError `json:"errors,omitempty"`
+}
+
+type BlockchainError struct {
+	Timestamp    time.Time `json:"timestamp"`
+	BlockNumbers string    `json:"block_numbers"`
+	Error        string    `json:"error"`
+	Source       string    `json:"source"`
 }

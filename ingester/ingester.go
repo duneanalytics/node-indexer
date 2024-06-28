@@ -61,6 +61,28 @@ type Info struct {
 	DuneErrors          []ErrorInfo
 }
 
+// Errors returns a combined list of errors from RPC requests and Dune requests, for use in progress reporting
+func (info Info) Errors() []models.BlockchainIndexError {
+	errors := make([]models.BlockchainIndexError, 0, len(info.RPCErrors)+len(info.DuneErrors))
+	for _, e := range info.RPCErrors {
+		errors = append(errors, models.BlockchainIndexError{
+			Timestamp:    e.Timestamp,
+			BlockNumbers: e.BlockNumbers,
+			Error:        e.Error.Error(),
+			Source:       "rpc",
+		})
+	}
+	for _, e := range info.DuneErrors {
+		errors = append(errors, models.BlockchainIndexError{
+			Timestamp:    e.Timestamp,
+			BlockNumbers: e.BlockNumbers,
+			Error:        e.Error.Error(),
+			Source:       "dune",
+		})
+	}
+	return errors
+}
+
 type ErrorInfo struct {
 	Timestamp    time.Time
 	BlockNumbers string
