@@ -3,6 +3,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -122,7 +123,18 @@ func (i *ingester) trySendBlockBatch(
 			i.log.Info("SendBlocks: Context canceled, stopping")
 			return nextBlockToSend, nil
 		}
-		// TODO: handle errors of duneAPI, save the blockRange impacted and report this back for later retries
+
+		// Store error for reporting
+		blocknumbers := make([]string, len(blockBatch))
+		for i, block := range blockBatch {
+			blocknumbers[i] = fmt.Sprintf("%d", block.BlockNumber)
+		}
+		i.info.DuneErrors = append(i.info.DuneErrors, ErrorInfo{
+			Timestamp:    time.Now(),
+			Error:        err,
+			BlockNumbers: strings.Join(blocknumbers, ","),
+		})
+
 		err := errors.Errorf("failed to send batch: %w", err)
 		i.log.Error("SendBlocks: Failed to send batch, exiting", "error", err)
 		return nextBlockToSend, err
