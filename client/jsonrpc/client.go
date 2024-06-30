@@ -41,9 +41,9 @@ func NewClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:dis
 		yes, err2 := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 		if yes {
 			if resp == nil {
-				log.Warn("Retrying request to RPC client", "error", err)
+				log.Warn("Retrying request to RPC client", "error", err2)
 			} else {
-				log.Warn("Retrying request to RPC client", "statusCode", resp.Status, "error", err)
+				log.Warn("Retrying request to RPC client", "statusCode", resp.Status, "error", err2)
 			}
 		}
 		return yes, err2

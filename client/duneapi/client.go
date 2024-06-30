@@ -60,9 +60,9 @@ func New(log *slog.Logger, cfg Config) (*client, error) { // revive:disable-line
 		yes, err2 := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 		if yes {
 			if resp == nil {
-				log.Warn("Retrying request to Dune API", "error", err)
+				log.Warn("Retrying request to Dune API", "error", err2)
 			} else {
-				log.Warn("Retrying request to Dune API", "statusCode", resp.Status, "error", err)
+				log.Warn("Retrying request to Dune API", "statusCode", resp.Status, "error", err2)
 			}
 		}
 		return yes, err2
