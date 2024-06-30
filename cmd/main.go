@@ -60,7 +60,7 @@ func main() {
 		stdlog.Fatal(err)
 	}
 
-	ctx, cancelFn := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	// Get stored progress unless config indicates we should start from 0
 	var startBlockNumber int64
@@ -99,6 +99,7 @@ func main() {
 		defer wg.Done()
 		err := ingester.Run(ctx, startBlockNumber, maxCount)
 		logger.Info("Ingester finished", "err", err)
+		cancel()
 	}()
 
 	defer ingester.Close()
@@ -108,10 +109,14 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	// handle Interrupt (ctrl-c) Term, used by `kill` et al, HUP which is commonly used to reload configs
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	s := <-quit
-	logger.Warn("Caught UNIX signal", "signal", s)
-	cancelFn()
+	select {
+	case <-ctx.Done():
+		logger.Warn("Context done")
+	case s := <-quit:
+		logger.Warn("Caught UNIX signal", "signal", s)
+		cancel()
+	}
 
-	// wait for all goroutines to finish
+	// wait for Run to finish
 	wg.Wait()
 }
