@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	stdsync "sync"
 	"syscall"
 	"time"
@@ -48,10 +49,20 @@ func main() {
 	var wg stdsync.WaitGroup
 	var rpcClient jsonrpc.BlockchainClient
 
+	rpcHTTPHeaders := make(map[string]string)
+	if cfg.RPCNode.ExtraHTTPHeader != "" {
+		pair := strings.Split(cfg.RPCNode.ExtraHTTPHeader, ",")
+		// We've validated this list has two elements
+		key := strings.Trim(pair[0], " ")
+		value := strings.Trim(pair[1], " ")
+		logger.Info("Adding extra HTTP header to RPC requests", "key", key, "value", value)
+		rpcHTTPHeaders[key] = value
+	}
 	switch cfg.RPCStack {
 	case models.OpStack:
 		rpcClient, err = jsonrpc.NewOpStackClient(logger, jsonrpc.Config{
-			URL: cfg.RPCNode.NodeURL,
+			URL:         cfg.RPCNode.NodeURL,
+			HTTPHeaders: rpcHTTPHeaders,
 		})
 	default:
 		stdlog.Fatalf("unsupported RPC stack: %s", cfg.RPCStack)

@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/models"
@@ -21,12 +23,19 @@ func (d DuneClient) HasError() error {
 }
 
 type RPCClient struct {
-	NodeURL string `long:"rpc-node-url" env:"RPC_NODE_URL" description:"URL for the blockchain node"`
+	NodeURL         string `long:"rpc-node-url" env:"RPC_NODE_URL" description:"URL for the blockchain node"`
+	ExtraHTTPHeader string `long:"rpc-http-header" env:"RPC_HTTP_HEADER" description:"Extra HTTP header to send with RPC requests. On the form 'key,value'"` // nolint:lll
 }
 
 func (r RPCClient) HasError() error {
 	if r.NodeURL == "" {
 		return errors.New("RPC node URL is required")
+	}
+	if r.ExtraHTTPHeader != "" {
+		header := strings.Split(r.ExtraHTTPHeader, ",")
+		if len(header) != 2 {
+			return fmt.Errorf("invalid rpc http header: expected 'key,value', got '%s'", r.ExtraHTTPHeader)
+		}
 	}
 	return nil
 }
