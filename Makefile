@@ -19,7 +19,7 @@ bin/gofumpt: bin
 	GOBIN=$(PWD)/bin go install mvdan.cc/gofumpt@v0.6.0
 
 build: cmd/main.go
-	CGO_ENABLED=0 go build -o indexer cmd/main.go
+	CGO_ENABLED=0 go build -ldflags="-X github.com/duneanalytics/blockchain-ingester/client/duneapi.commitHash=$(shell git rev-parse --short HEAD)" -o indexer cmd/main.go
 
 lint: bin/golangci-lint bin/gofumpt
 	go fmt ./...

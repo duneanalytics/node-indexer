@@ -138,6 +138,12 @@ func (c *client) buildRequest(payloads []models.RPCBlock, buffer *bytes.Buffer) 
 	return request, nil
 }
 
+// We inject the commit hash here at build time, using the -X linker flag, so we can use it in the User-Agent header
+var (
+	commitHash string
+	userAgent  = fmt.Sprintf("node-indexer/%s", commitHash)
+)
+
 func (c *client) sendRequest(ctx context.Context, request BlockchainIngestRequest) error {
 	start := time.Now()
 	var err error
@@ -172,6 +178,7 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 		req.Header.Set("Content-Encoding", request.ContentEncoding)
 	}
 	req.Header.Set("Content-Type", "application/x-ndjson")
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("x-idempotency-key", request.IdempotencyKey)
 	req.Header.Set("x-dune-evm-stack", request.EVMStack)
 	req.Header.Set("x-dune-api-key", c.cfg.APIKey)
