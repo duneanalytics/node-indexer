@@ -100,7 +100,7 @@ func main() {
 			Stack:                  cfg.RPCStack,
 			BlockchainName:         cfg.BlockchainName,
 			BlockSubmitInterval:    cfg.BlockSubmitInterval,
-			SkipFailedBlocks:       cfg.SkipFailedBlocks,
+			SkipFailedBlocks:       cfg.RPCNode.SkipFailedBlocks,
 		},
 		progress,
 	)
