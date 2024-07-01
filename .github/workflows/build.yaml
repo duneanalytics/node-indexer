@@ -36,5 +36,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
 
-      - run: |
+      - name: Build and push Docker images
+        env:
+          DOCKER_HUB_KEY: ${{ secrets.DOCKER_HUB_KEY }}
+        run: |
           make image-push
