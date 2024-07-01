@@ -70,10 +70,6 @@ func (i *ingester) trySendCompletedBlocks(
 	nextBlockToSend int64,
 ) (int64, error) {
 	for {
-		if len(collectedBlocks) < maxBatchSize/10 {
-			// if we have very little to send, wait for next tick to avoid tiny batches impacting throughput
-			return nextBlockToSend, nil
-		}
 		nextBlock, err := i.trySendBlockBatch(ctx, collectedBlocks, nextBlockToSend, maxBatchSize)
 		if err != nil || nextBlock == nextBlockToSend {
 			return nextBlock, err
