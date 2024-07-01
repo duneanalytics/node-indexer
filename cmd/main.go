@@ -50,9 +50,9 @@ func main() {
 	var rpcClient jsonrpc.BlockchainClient
 
 	rpcHTTPHeaders := make(map[string]string)
-	if cfg.RPCNode.ExtraHTTPHeader != "" {
-		pair := strings.Split(cfg.RPCNode.ExtraHTTPHeader, ",")
-		// We've validated this list has two elements
+	for _, header := range cfg.RPCNode.ExtraHTTPHeaders {
+		pair := strings.Split(header, ":")
+		// We've validated this list has two elements in `config.HasError()`
 		key := strings.Trim(pair[0], " ")
 		value := strings.Trim(pair[1], " ")
 		logger.Info("Adding extra HTTP header to RPC requests", "key", key, "value", value)
