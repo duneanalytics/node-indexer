@@ -82,7 +82,9 @@ func (i *ingester) ProduceBlockNumbers(
 				return latestBlockNumber
 			case <-time.After(i.cfg.PollInterval):
 			}
-			i.log.Debug(fmt.Sprintf("Waiting %v for block to be available..", i.cfg.PollInterval),
+			i.log.Debug(
+				"Waiting for block to be available",
+				"waitTime", i.cfg.PollInterval.String(),
 				"blockNumber", blockNumber,
 				"latestBlockNumber", latestBlockNumber,
 			)

@@ -39,7 +39,6 @@ type Ingester interface {
 
 const (
 	defaultMaxBatchSize           = 5
-	defaultPollInterval           = 1 * time.Second
 	defaultReportProgressInterval = 30 * time.Second
 )
 
@@ -118,9 +117,6 @@ func New(
 		dune: dune,
 		cfg:  cfg,
 		info: info,
-	}
-	if ing.cfg.PollInterval == 0 {
-		ing.cfg.PollInterval = defaultPollInterval
 	}
 	if ing.cfg.ReportProgressInterval == 0 {
 		ing.cfg.ReportProgressInterval = defaultReportProgressInterval
