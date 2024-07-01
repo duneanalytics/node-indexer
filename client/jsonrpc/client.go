@@ -27,10 +27,11 @@ const (
 )
 
 type rpcClient struct {
-	client  *retryablehttp.Client
-	cfg     Config
-	log     *slog.Logger
-	bufPool *sync.Pool
+	client      *retryablehttp.Client
+	cfg         Config
+	log         *slog.Logger
+	bufPool     *sync.Pool
+	httpHeaders map[string]string
 }
 
 func NewClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:disable-line:unexported-return
@@ -61,6 +62,7 @@ func NewClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:dis
 				return new(bytes.Buffer)
 			},
 		},
+		httpHeaders: cfg.HTTPHeaders,
 	}
 	// lets validate RPC node is up & reachable
 	_, err := rpc.LatestBlockNumber()
@@ -111,6 +113,11 @@ func (c *rpcClient) getResponseBody(
 	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodPost, c.cfg.URL, output)
 	if err != nil {
 		return err
+	}
+	if c.httpHeaders != nil {
+		for k, v := range c.httpHeaders {
+			req.Header.Set(k, v)
+		}
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
