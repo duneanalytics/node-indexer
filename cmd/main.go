@@ -31,7 +31,20 @@ func main() {
 	if err != nil {
 		stdlog.Fatal(err)
 	}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	logOptions := &slog.HandlerOptions{}
+	switch cfg.LogLevel {
+	case "debug":
+		logOptions.Level = slog.LevelDebug
+	case "info":
+		logOptions.Level = slog.LevelInfo
+	case "warn":
+		logOptions.Level = slog.LevelWarn
+	case "error":
+		logOptions.Level = slog.LevelError
+	default:
+		stdlog.Fatalf("unsupported log level: '%s'", cfg.LogLevel)
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, logOptions))
 	slog.SetDefault(logger)
 
 	duneClient, err := duneapi.New(logger, duneapi.Config{
