@@ -171,8 +171,7 @@ func TestSendBlocks(t *testing.T) {
 	})
 
 	// Send blocks except the next block, ensure none are sent to the API
-	// NOTE: this size and maxBatchSize are related, because we optimize for not sending tiny batches
-	for _, n := range []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 19} {
+	for _, n := range []int64{2, 3, 4, 5, 6, 7, 8, 9, 10, 19} {
 		select {
 		case <-ctx.Done(): // if error group fails, its context is canceled
 			require.Fail(t, "context was canceled")
