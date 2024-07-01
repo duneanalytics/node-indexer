@@ -23,8 +23,9 @@ func (d DuneClient) HasError() error {
 }
 
 type RPCClient struct {
-	NodeURL         string `long:"rpc-node-url" env:"RPC_NODE_URL" description:"URL for the blockchain node"`
-	ExtraHTTPHeader string `long:"rpc-http-header" env:"RPC_HTTP_HEADER" description:"Extra HTTP header to send with RPC requests. On the form 'key,value'"` // nolint:lll
+	NodeURL          string `long:"rpc-node-url" env:"RPC_NODE_URL" description:"URL for the blockchain node"`
+	ExtraHTTPHeader  string `long:"rpc-http-header" env:"RPC_HTTP_HEADER" description:"Extra HTTP header to send with RPC requests. On the form 'key,value'"`                              // nolint:lll
+	SkipFailedBlocks bool   `long:"rpc-skip-failed-blocks" env:"RPC_SKIP_FAILED_BLOCKS" description:"Skip blocks that we fail to get from RPC. If false, we crash on RPC request failure"` // nolint:lll
 }
 
 func (r RPCClient) HasError() error {
@@ -51,7 +52,6 @@ type Config struct {
 	RPCStack               models.EVMStack `long:"rpc-stack" env:"RPC_STACK" description:"Stack for the RPC client" default:"opstack"`                                                 // nolint:lll
 	RPCConcurrency         int             `long:"rpc-concurrency" env:"RPC_CONCURRENCY" description:"Number of concurrent requests to the RPC node" default:"25"`                     // nolint:lll
 	BlockSubmitInterval    time.Duration   `long:"block-submit-interval" env:"BLOCK_SUBMIT_INTERVAL" description:"Interval at which to submit batched blocks to Dune" default:"500ms"` // nolint:lll
-	SkipFailedBlocks       bool            `long:"skip-failed-blocks" env:"SKIP_FAILED_BLOCKS" description:"Skip failed blocks when submitting to Dune"`                               // nolint:lll
 }
 
 func (c Config) HasError() error {
