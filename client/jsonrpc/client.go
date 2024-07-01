@@ -64,7 +64,7 @@ func NewClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:dis
 		},
 		httpHeaders: cfg.HTTPHeaders,
 	}
-	// lets validate RPC node is up & reachable
+	// Ensure RPC node is up & reachable
 	_, err := rpc.LatestBlockNumber()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to jsonrpc: %w", err)
