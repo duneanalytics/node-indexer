@@ -52,6 +52,7 @@ type Config struct {
 	RPCStack               models.EVMStack `long:"rpc-stack" env:"RPC_STACK" description:"Stack for the RPC client" default:"opstack"`                                                 // nolint:lll
 	RPCConcurrency         int             `long:"rpc-concurrency" env:"RPC_CONCURRENCY" description:"Number of concurrent requests to the RPC node" default:"25"`                     // nolint:lll
 	BlockSubmitInterval    time.Duration   `long:"block-submit-interval" env:"BLOCK_SUBMIT_INTERVAL" description:"Interval at which to submit batched blocks to Dune" default:"500ms"` // nolint:lll
+	LogLevel               string          `long:"log" env:"LOG" description:"Log level" choice:"info" choice:"debug" choice:"warn" choice:"error" default:"info"`                     // nolint:lll
 }
 
 func (c Config) HasError() error {
