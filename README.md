@@ -44,7 +44,7 @@ docker run duneanalytics/node-indexer --help
 Also, we mention some of the options here:
 
 ### Log level
-Use `LOG=debug` (`--log`) to emit more logs than the default `info` level. To emit less logs, use `warn`, or `error` (least).
+The `log` flag (environment variable `LOG`) controls the log level. Use `--log debug`/`LOG=debug` to emit more logs than the default `info` level. To emit less logs, use `warn`, or `error` (least).
 
 ### Tuning RPC concurrency
 The flag `--rpc-concurrency` (environment variable `RPC_CONCURRENCY`) specifies the number of threads (goroutines)
@@ -63,6 +63,7 @@ go run cmd/main.go ... --rpc-http-header header1:value1 --rpc-http-header header
 
 Or with the environment variable `RPC_HTTP_HEADERS='header1:value1|header2:value2|...'`, i.e. a `|` separated list of pairs,
 where each pair is separated by `:` (make sure to quote the full string to avoid creating a pipe).
+
 ```
-docker run .--env RPC_HTTP_HEADERS='header1:value1|header2:value2' ... duneanalytics/node-indexer:<version>
+docker run --env RPC_HTTP_HEADERS='header1:value1|header2:value2' ... duneanalytics/node-indexer:<version>
 ```
