@@ -71,7 +71,10 @@ func (p *GetBlockchainProgressResponse) String() string {
 type PostBlockchainProgressRequest struct {
 	LastIngestedBlockNumber int64             `json:"last_ingested_block_number,omitempty"`
 	LatestBlockNumber       int64             `json:"latest_block_number,omitempty"`
-	Errors                  []BlockchainError `json:"errors,omitempty"`
+	Errors                  []BlockchainError `json:"errors"`
+	DuneErrorCounts         int               `json:"dune_error_counts"`
+	RPCErrorCounts          int               `json:"rpc_error_counts"`
+	Since                   time.Time         `json:"since"`
 }
 
 type BlockchainError struct {

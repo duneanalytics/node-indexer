@@ -52,42 +52,6 @@ type Config struct {
 	SkipFailedBlocks       bool
 }
 
-type Info struct {
-	LatestBlockNumber   int64
-	IngestedBlockNumber int64
-	ConsumedBlockNumber int64
-	RPCErrors           []ErrorInfo
-	DuneErrors          []ErrorInfo
-}
-
-// Errors returns a combined list of errors from RPC requests and Dune requests, for use in progress reporting
-func (info Info) Errors() []models.BlockchainIndexError {
-	errors := make([]models.BlockchainIndexError, 0, len(info.RPCErrors)+len(info.DuneErrors))
-	for _, e := range info.RPCErrors {
-		errors = append(errors, models.BlockchainIndexError{
-			Timestamp:    e.Timestamp,
-			BlockNumbers: e.BlockNumbers,
-			Error:        e.Error.Error(),
-			Source:       "rpc",
-		})
-	}
-	for _, e := range info.DuneErrors {
-		errors = append(errors, models.BlockchainIndexError{
-			Timestamp:    e.Timestamp,
-			BlockNumbers: e.BlockNumbers,
-			Error:        e.Error.Error(),
-			Source:       "dune",
-		})
-	}
-	return errors
-}
-
-type ErrorInfo struct {
-	Timestamp    time.Time
-	BlockNumbers string
-	Error        error
-}
-
 type ingester struct {
 	log  *slog.Logger
 	node jsonrpc.BlockchainClient
@@ -103,10 +67,7 @@ func New(
 	cfg Config,
 	progress *models.BlockchainIndexProgress,
 ) Ingester {
-	info := Info{
-		RPCErrors:  []ErrorInfo{},
-		DuneErrors: []ErrorInfo{},
-	}
+	info := NewInfo(cfg.BlockchainName, cfg.Stack.String())
 	if progress != nil {
 		info.LatestBlockNumber = progress.LatestBlockNumber
 		info.IngestedBlockNumber = progress.LastIngestedBlockNumber
