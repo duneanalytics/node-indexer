@@ -23,19 +23,19 @@ func (d DuneClient) HasError() error {
 }
 
 type RPCClient struct {
-	NodeURL          string `long:"rpc-node-url" env:"RPC_NODE_URL" description:"URL for the blockchain node"`
-	ExtraHTTPHeader  string `long:"rpc-http-header" env:"RPC_HTTP_HEADER" description:"Extra HTTP header to send with RPC requests. On the form 'key,value'"`                              // nolint:lll
-	SkipFailedBlocks bool   `long:"rpc-skip-failed-blocks" env:"RPC_SKIP_FAILED_BLOCKS" description:"Skip blocks that we fail to get from RPC. If false, we crash on RPC request failure"` // nolint:lll
+	NodeURL          string   `long:"rpc-node-url" env:"RPC_NODE_URL" description:"URL for the blockchain node"`
+	ExtraHTTPHeaders []string `long:"rpc-http-header" env:"RPC_HTTP_HEADERS" env-delim:"|" description:"Extra HTTP headers to send with RPC requests. Each header pair must be on the form 'key:value'"` // nolint:lll
+	SkipFailedBlocks bool     `long:"rpc-skip-failed-blocks" env:"RPC_SKIP_FAILED_BLOCKS" description:"Skip blocks that we fail to get from RPC. If false (default), we crash on RPC request failure"`   // nolint:lll
 }
 
 func (r RPCClient) HasError() error {
 	if r.NodeURL == "" {
 		return errors.New("RPC node URL is required")
 	}
-	if r.ExtraHTTPHeader != "" {
-		header := strings.Split(r.ExtraHTTPHeader, ",")
-		if len(header) != 2 {
-			return fmt.Errorf("invalid rpc http header: expected 'key,value', got '%s'", r.ExtraHTTPHeader)
+	for _, header := range r.ExtraHTTPHeaders {
+		pair := strings.Split(header, ":")
+		if len(pair) != 2 {
+			return fmt.Errorf("invalid rpc http headers: expected 'key:value', got '%s'", pair)
 		}
 	}
 	return nil
