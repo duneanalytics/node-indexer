@@ -188,8 +188,6 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 			blocksPerSec := float64(lastIngested-previousIngested) / tNow.Sub(previousTime).Seconds()
 			newDistance := latest - lastIngested
 
-			rpcErrors := len(i.info.RPCErrors)
-			duneErrors := len(i.info.DuneErrors)
 			fields := []interface{}{
 				"blocksPerSec", fmt.Sprintf("%.2f", blocksPerSec),
 				"latestBlockNumber", latest,
@@ -203,31 +201,23 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 				}
 				previousHoursToCatchUp = etaHours
 			}
-			if rpcErrors > 0 {
-				fields = append(fields, "rpcErrors", rpcErrors)
+			if i.info.Errors.RPCErrorCount > 0 {
+				fields = append(fields, "rpcErrors", i.info.Errors.RPCErrorCount)
 			}
-			if duneErrors > 0 {
-				fields = append(fields, "duneErrors", duneErrors)
+			if i.info.Errors.DuneErrorCount > 0 {
+				fields = append(fields, "duneErrors", i.info.Errors.DuneErrorCount)
 			}
 
 			i.log.Info("PROGRESS REPORT", fields...)
 			previousIngested = lastIngested
 			previousTime = tNow
 
-			err := i.dune.PostProgressReport(ctx, models.BlockchainIndexProgress{
-				BlockchainName:          i.cfg.BlockchainName,
-				EVMStack:                i.cfg.Stack.String(),
-				LastIngestedBlockNumber: lastIngested,
-				LatestBlockNumber:       latest,
-				Errors:                  i.info.Errors(),
-			})
+			err := i.dune.PostProgressReport(ctx, i.info.ToProgressReport())
 			if err != nil {
 				i.log.Error("Failed to post progress report", "error", err)
 			} else {
 				i.log.Debug("Posted progress report")
-				// Reset errors after reporting
-				i.info.RPCErrors = []ErrorInfo{}
-				i.info.DuneErrors = []ErrorInfo{}
+				i.info.ResetErrors()
 			}
 		}
 	}
@@ -238,14 +228,7 @@ func (i *ingester) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	i.log.Info("Sending final progress report")
-	err := i.dune.PostProgressReport(
-		ctx,
-		models.BlockchainIndexProgress{
-			BlockchainName:          i.cfg.BlockchainName,
-			EVMStack:                i.cfg.Stack.String(),
-			LastIngestedBlockNumber: i.info.IngestedBlockNumber,
-			LatestBlockNumber:       i.info.LatestBlockNumber,
-		})
+	err := i.dune.PostProgressReport(ctx, i.info.ToProgressReport())
 	i.log.Info("Closing node")
 	if err != nil {
 		_ = i.node.Close()

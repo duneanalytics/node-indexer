@@ -36,8 +36,7 @@ func (i *ingester) SendBlocks(ctx context.Context, blocks <-chan models.RPCBlock
 			}
 
 			if block.Errored() {
-				i.info.RPCErrors = append(i.info.RPCErrors, ErrorInfo{
-					Timestamp:    time.Now(),
+				i.info.Errors.ObserveRPCError(ErrorInfo{
 					BlockNumbers: fmt.Sprintf("%d", block.BlockNumber),
 					Error:        block.Error,
 				})
@@ -125,8 +124,8 @@ func (i *ingester) trySendBlockBatch(
 		for i, block := range blockBatch {
 			blocknumbers[i] = fmt.Sprintf("%d", block.BlockNumber)
 		}
-		i.info.DuneErrors = append(i.info.DuneErrors, ErrorInfo{
-			Timestamp:    time.Now(),
+
+		i.info.Errors.ObserveDuneError(ErrorInfo{
 			Error:        err,
 			BlockNumbers: strings.Join(blocknumbers, ","),
 		})

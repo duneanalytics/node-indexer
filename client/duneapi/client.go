@@ -260,6 +260,9 @@ func (c *client) PostProgressReport(ctx context.Context, progress models.Blockch
 		LastIngestedBlockNumber: progress.LastIngestedBlockNumber,
 		LatestBlockNumber:       progress.LatestBlockNumber,
 		Errors:                  errors,
+		DuneErrorCounts:         progress.DuneErrorCounts,
+		RPCErrorCounts:          progress.RPCErrorCounts,
+		Since:                   progress.Since,
 	}
 	url := fmt.Sprintf("%s/api/beta/blockchain/%s/ingest/progress", c.cfg.URL, c.cfg.BlockchainName)
 	payload, err := json.Marshal(request)
