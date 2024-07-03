@@ -22,9 +22,10 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: GitHub Tag Name example
+        env:
+          TAG: "${{ github.ref_name == 'main' && 'latest' || github.ref_name }}"
         run: |
-          echo "Tag name from GITHUB_REF_NAME: $GITHUB_REF_NAME"
-          echo "Tag name from github.ref_name: ${{  github.ref_name }}"
+          echo "Tag name: $TAG"
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
