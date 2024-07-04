@@ -21,12 +21,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: GitHub Tag Name example
-        env:
-          TAG: "${{ github.ref_name == 'main' && 'latest' || github.ref_name }}"
-        run: |
-          echo "Tag name: $TAG"
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -47,5 +41,6 @@ jobs:
       - name: Build and push Docker images
         env:
           DOCKER_HUB_KEY: ${{ secrets.DOCKER_HUB_KEY }}
+          TAG: "${{ github.ref_name == 'main' && 'latest' || github.ref_name }}"
         run: |
           make image-push
