@@ -33,6 +33,8 @@ type BlockchainIngester interface {
 	// PostProgressReport sends a progress report to DuneAPI
 	PostProgressReport(ctx context.Context, progress models.BlockchainIndexProgress) error
 
+	GetBlockGaps(ctx context.Context) (*models.BlockchainGaps, error)
+
 	// - API to discover the latest block number ingested
 	//   this can also provide "next block ranges" to push to DuneAPI
 	// - log/metrics on catching up/falling behind, distance from tip of chain
@@ -365,4 +367,77 @@ func (c *client) GetProgressReport(ctx context.Context) (*models.BlockchainIndex
 		LatestBlockNumber:       response.LatestBlockNumber,
 	}
 	return progress, nil
+}
+
+func (c *client) GetBlockGaps(ctx context.Context) (*models.BlockchainGaps, error) {
+	var response BlockchainGapsResponse
+	var err error
+	var responseStatus string
+	start := time.Now()
+
+	// Log response
+	defer func() {
+		if err != nil {
+			c.log.Error("Getting block gaps failed",
+				"error", err,
+				"statusCode", responseStatus,
+				"duration", time.Since(start),
+			)
+		} else {
+			c.log.Info("Got block gaps",
+				"blockGaps", response.String(),
+				"duration", time.Since(start),
+			)
+		}
+	}()
+
+	url := fmt.Sprintf("%s/api/beta/blockchain/%s/gaps", c.cfg.URL, c.cfg.BlockchainName)
+	c.log.Debug("Sending request", "url", url)
+	req, err := retryablehttp.NewRequestWithContext(ctx, "GET", url, nil) // nil: empty body
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-dune-api-key", c.cfg.APIKey)
+	req = req.WithContext(ctx)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		bs, _ := io.ReadAll(resp.Body)
+		responseBody := string(bs)
+		// We mutate the global err here because we have deferred a log message where we check for non-nil err
+		err = fmt.Errorf("unexpected status code: %v, %v with body '%s'", resp.StatusCode, resp.Status, responseBody)
+		return nil, err
+	}
+
+	err = json.Unmarshal(responseBody, &response)
+	if err != nil {
+		return nil, err
+	}
+
+	gaps := &models.BlockchainGaps{
+		Gaps: mapSlice(response.Gaps, func(gap BlockGap) models.BlockGap {
+			return models.BlockGap{
+				FirstMissing: gap.FirstMissing,
+				LastMissing:  gap.LastMissing,
+			}
+		}),
+	}
+	return gaps, nil
+}
+
+func mapSlice[T any, U any](slice []T, mapper func(T) U) []U {
+	result := make([]U, len(slice))
+	for i, v := range slice {
+		result[i] = mapper(v)
+	}
+	return result
 }

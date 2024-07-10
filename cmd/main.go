@@ -18,6 +18,7 @@ import (
 	"github.com/duneanalytics/blockchain-ingester/client/jsonrpc"
 	"github.com/duneanalytics/blockchain-ingester/config"
 	"github.com/duneanalytics/blockchain-ingester/ingester"
+	"github.com/duneanalytics/blockchain-ingester/lib/dlq"
 	"github.com/duneanalytics/blockchain-ingester/models"
 )
 
@@ -58,6 +59,19 @@ func main() {
 		stdlog.Fatal(err)
 	}
 	defer duneClient.Close()
+
+	// Create an extra Dune API client for DLQ processing since it is not thread-safe yet
+	duneClientDLQ, err := duneapi.New(logger, duneapi.Config{
+		APIKey:             cfg.Dune.APIKey,
+		URL:                cfg.Dune.URL,
+		BlockchainName:     cfg.BlockchainName,
+		Stack:              cfg.RPCStack,
+		DisableCompression: cfg.DisableCompression,
+	})
+	if err != nil {
+		stdlog.Fatal(err)
+	}
+	defer duneClientDLQ.Close()
 
 	var wg stdsync.WaitGroup
 	var rpcClient jsonrpc.BlockchainClient
@@ -101,21 +115,37 @@ func main() {
 		startBlockNumber = cfg.BlockHeight
 	}
 
+	dlqBlockNumbers := dlq.NewDLQWithDelay[int64](dlq.RetryDelayLinear(cfg.DLQRetryInterval))
+
+	if !cfg.DisableGapsQuery {
+		blockGaps, err := duneClient.GetBlockGaps(ctx)
+		if err != nil {
+			stdlog.Fatal(err)
+		} else {
+			ingester.AddBlockGaps(dlqBlockNumbers, blockGaps.Gaps)
+		}
+	}
+
 	maxCount := int64(0) // 0 means ingest until cancelled
 	ingester := ingester.New(
 		logger,
 		rpcClient,
 		duneClient,
+		duneClientDLQ,
 		ingester.Config{
-			MaxConcurrentRequests:  cfg.RPCConcurrency,
-			ReportProgressInterval: cfg.ReportProgressInterval,
-			PollInterval:           cfg.PollInterval,
-			Stack:                  cfg.RPCStack,
-			BlockchainName:         cfg.BlockchainName,
-			BlockSubmitInterval:    cfg.BlockSubmitInterval,
-			SkipFailedBlocks:       cfg.RPCNode.SkipFailedBlocks,
+			MaxConcurrentRequests:    cfg.RPCConcurrency,
+			MaxConcurrentRequestsDLQ: cfg.DLQConcurrency,
+			ReportProgressInterval:   cfg.ReportProgressInterval,
+			PollInterval:             cfg.PollInterval,
+			PollDLQInterval:          cfg.PollDLQInterval,
+			Stack:                    cfg.RPCStack,
+			BlockchainName:           cfg.BlockchainName,
+			BlockSubmitInterval:      cfg.BlockSubmitInterval,
+			SkipFailedBlocks:         cfg.RPCNode.SkipFailedBlocks,
+			DLQOnly:                  cfg.DLQOnly,
 		},
 		progress,
+		dlqBlockNumbers,
 	)
 
 	wg.Add(1)

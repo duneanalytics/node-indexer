@@ -42,15 +42,20 @@ func (r RPCClient) HasError() error {
 }
 
 type Config struct {
-	BlockHeight            int64  `long:"block-height" env:"BLOCK_HEIGHT" description:"block height to start from" default:"-1"`                     // nolint:lll
-	BlockchainName         string `long:"blockchain-name" env:"BLOCKCHAIN_NAME" description:"name of the blockchain" required:"true"`                // nolint:lll
-	DisableCompression     bool   `long:"disable-compression" env:"DISABLE_COMPRESSION" description:"disable compression when sending data to Dune"` // nolint:lll
+	BlockHeight            int64  `long:"block-height" env:"BLOCK_HEIGHT" description:"block height to start from" default:"-1"`                         // nolint:lll
+	BlockchainName         string `long:"blockchain-name" env:"BLOCKCHAIN_NAME" description:"name of the blockchain" required:"true"`                    // nolint:lll
+	DisableCompression     bool   `long:"disable-compression" env:"DISABLE_COMPRESSION" description:"disable compression when sending data to Dune"`     // nolint:lll
+	DisableGapsQuery       bool   `long:"disable-gaps-query" env:"DISABLE_GAPS_QUERY" description:"disable gaps query used to populate the initial DLQ"` // nolint:lll
+	DLQOnly                bool   `long:"dlq-only" env:"DLQ_ONLY" description:"Runs just the DLQ processing on its own"`                                 // nolint:lll
 	Dune                   DuneClient
 	PollInterval           time.Duration `long:"rpc-poll-interval" env:"RPC_POLL_INTERVAL" description:"Interval to poll the blockchain node" default:"300ms"`    // nolint:lll
+	PollDLQInterval        time.Duration `long:"dlq-poll-interval" env:"DLQ_POLL_INTERVAL" description:"Interval to poll the dlq" default:"300ms"`                // nolint:lll
+	DLQRetryInterval       time.Duration `long:"dlq-retry-interval" env:"DLQ_RETRY_INTERVAL" description:"Interval for linear backoff in DLQ " default:"1m"`      // nolint:lll
 	ReportProgressInterval time.Duration `long:"report-progress-interval" env:"REPORT_PROGRESS_INTERVAL" description:"Interval to report progress" default:"30s"` // nolint:lll
 	RPCNode                RPCClient
 	RPCStack               models.EVMStack `long:"rpc-stack" env:"RPC_STACK" description:"Stack for the RPC client" default:"opstack"`                                                 // nolint:lll
 	RPCConcurrency         int             `long:"rpc-concurrency" env:"RPC_CONCURRENCY" description:"Number of concurrent requests to the RPC node" default:"25"`                     // nolint:lll
+	DLQConcurrency         int             `long:"dlq-concurrency" env:"DLQ_CONCURRENCY" description:"Number of concurrent requests to the RPC node for DLQ processing" default:"2"`   // nolint:lll
 	BlockSubmitInterval    time.Duration   `long:"block-submit-interval" env:"BLOCK_SUBMIT_INTERVAL" description:"Interval at which to submit batched blocks to Dune" default:"500ms"` // nolint:lll
 	LogLevel               string          `long:"log" env:"LOG" description:"Log level" choice:"info" choice:"debug" choice:"warn" choice:"error" default:"info"`                     // nolint:lll
 }

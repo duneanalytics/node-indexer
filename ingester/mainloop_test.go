@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/duneanalytics/blockchain-ingester/lib/dlq"
+
 	"github.com/duneanalytics/blockchain-ingester/ingester"
 	duneapi_mock "github.com/duneanalytics/blockchain-ingester/mocks/duneapi"
 	jsonrpc_mock "github.com/duneanalytics/blockchain-ingester/mocks/jsonrpc"
@@ -73,12 +75,15 @@ func TestRunUntilCancel(t *testing.T) {
 		slog.New(slog.NewTextHandler(logOutput, nil)),
 		rpcClient,
 		duneapi,
+		duneapi,
 		ingester.Config{
-			BlockSubmitInterval:   time.Nanosecond,
-			MaxConcurrentRequests: 10,
-			SkipFailedBlocks:      false,
+			BlockSubmitInterval:      time.Nanosecond,
+			MaxConcurrentRequests:    10,
+			MaxConcurrentRequestsDLQ: 2,
+			SkipFailedBlocks:         false,
 		},
 		nil, // progress
+		dlq.NewDLQ[int64](),
 	)
 
 	err := ing.Run(ctx, 1, -1)                // run until canceled
@@ -110,10 +115,12 @@ func TestProduceBlockNumbers(t *testing.T) {
 		slog.New(slog.NewTextHandler(logOutput, nil)),
 		rpcClient,
 		duneapi,
+		duneapi,
 		ingester.Config{
 			BlockSubmitInterval: time.Nanosecond,
 		},
 		nil, // progress
+		dlq.NewDLQ[int64](),
 	)
 	blockNumbers := make(chan int64)
 	var wg sync.WaitGroup
@@ -155,10 +162,12 @@ func TestSendBlocks(t *testing.T) {
 		slog.New(slog.NewTextHandler(logOutput, nil)),
 		nil, // node client isn't used in this unit test
 		duneapi,
+		duneapi,
 		ingester.Config{
 			BlockSubmitInterval: time.Nanosecond,
 		},
 		nil, // progress
+		dlq.NewDLQ[int64](),
 	)
 
 	blocks := make(chan models.RPCBlock)
@@ -245,14 +254,17 @@ func TestRunBlocksOutOfOrder(t *testing.T) {
 		slog.New(slog.NewTextHandler(logOutput, nil)),
 		rpcClient,
 		duneapi,
+		duneapi,
 		ingester.Config{
-			MaxConcurrentRequests: 20, // fetch blocks in multiple goroutines
+			MaxConcurrentRequests:    20,
+			MaxConcurrentRequestsDLQ: 2, // fetch blocks in multiple goroutines
 			// big enough compared to the time spent in block by number to ensure batching. We panic
 			// in the mocked Dune client if we don't get a batch of blocks (more than one block).
 			BlockSubmitInterval: 50 * time.Millisecond,
 			SkipFailedBlocks:    false,
 		},
 		nil, // progress
+		dlq.NewDLQ[int64](),
 	)
 
 	err := ing.Run(ctx, 1, -1)                // run until canceled
@@ -294,12 +306,15 @@ func TestRunRPCNodeFails(t *testing.T) {
 		slog.New(slog.NewTextHandler(logOutput, nil)),
 		rpcClient,
 		duneapi,
+		duneapi,
 		ingester.Config{
-			MaxConcurrentRequests: 10,
-			BlockSubmitInterval:   time.Millisecond,
-			SkipFailedBlocks:      false,
+			MaxConcurrentRequests:    10,
+			MaxConcurrentRequestsDLQ: 2,
+			BlockSubmitInterval:      time.Millisecond,
+			SkipFailedBlocks:         false,
 		},
 		nil, // progress
+		dlq.NewDLQ[int64](),
 	)
 
 	err := ing.Run(ctx, 1, -1) // run until canceled
@@ -313,12 +328,198 @@ func TestRunFailsIfNoConcurrentRequests(t *testing.T) {
 		slog.New(slog.NewTextHandler(logOutput, nil)),
 		nil,
 		nil,
+		nil,
 		ingester.Config{
 			MaxConcurrentRequests: 0,
 		},
 		nil, // progress
+		dlq.NewDLQ[int64](),
 	)
 
 	err := ing.Run(context.Background(), 1, -1) // run until canceled
 	require.ErrorContains(t, err, "MaxConcurrentRequests must be > 0")
+}
+
+func TestRunFailsIfNoConcurrentRequestsDLQ(t *testing.T) {
+	logOutput := io.Discard
+	ing := ingester.New(
+		slog.New(slog.NewTextHandler(logOutput, nil)),
+		nil,
+		nil,
+		nil,
+		ingester.Config{
+			MaxConcurrentRequests:    10,
+			MaxConcurrentRequestsDLQ: 0,
+		},
+		nil, // progress
+		dlq.NewDLQ[int64](),
+	)
+
+	err := ing.Run(context.Background(), 1, -1) // run until canceled
+	require.ErrorContains(t, err, "MaxConcurrentRequestsDLQ must be > 0")
+}
+
+func TestRunWithDLQ(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	maxBlockNumber := int64(1000)
+	startBlockNumber := int64(10)
+
+	// Initial DLQ
+	dlqBlockNumbers := dlq.NewDLQWithDelay[int64](dlq.RetryDelayLinear(time.Duration(10) * time.Millisecond))
+	gaps := []models.BlockGap{
+		{
+			FirstMissing: 9,
+			LastMissing:  9,
+		}, {
+			FirstMissing: 3,
+			LastMissing:  7,
+		}, {
+			FirstMissing: 0,
+			LastMissing:  0,
+		},
+	}
+	ingester.AddBlockGaps(dlqBlockNumbers, gaps)
+
+	// blockNumber int64 -> timesSubmitted int
+	var blocksIndexed sync.Map
+	// Prepopulate expected blocks
+	for i := int64(0); i < maxBlockNumber; i++ {
+		blocksIndexed.Store(i, 0)
+	}
+	// Add those that aren't considered as previous gaps
+	incrementAndGet(&blocksIndexed, int64(1))
+	incrementAndGet(&blocksIndexed, int64(2))
+	incrementAndGet(&blocksIndexed, int64(8))
+
+	// Dune API Mocking
+	var sendBlocksRequests sync.Map
+	duneapi := &duneapi_mock.BlockchainIngesterMock{
+		SendBlocksFunc: func(_ context.Context, blocks []models.RPCBlock) error {
+			if len(blocks) == 0 {
+				return nil
+			}
+			// Count Requests by block number
+			for _, block := range blocks {
+				incrementAndGet(&sendBlocksRequests, block.BlockNumber)
+			}
+
+			// Fail if this batch contains a block number that hasn't been requested at least twice before this call
+			for _, block := range blocks {
+				requests, _ := sendBlocksRequests.Load(block.BlockNumber)
+				if requests.(int) <= 2 {
+					return errors.Errorf("failing batch due to %v having only been requested %v times",
+						block.BlockNumber, requests)
+				}
+			}
+
+			// Count blocks as indexed by block number
+			for _, block := range blocks {
+				incrementAndGet(&blocksIndexed, block.BlockNumber)
+			}
+
+			// Look for gaps
+			if !duneStoreContainsGaps(&blocksIndexed, maxBlockNumber) {
+				// cancel execution when we have sent all blocks
+				cancel()
+				return context.Canceled
+			}
+
+			return nil
+		},
+		PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
+			return nil
+		},
+	}
+
+	// RPC Mocking
+	var rpcBlocksRequests sync.Map
+	rpcClient := &jsonrpc_mock.BlockchainClientMock{
+		LatestBlockNumberFunc: func() (int64, error) {
+			return maxBlockNumber + 1, nil
+		},
+		BlockByNumberFunc: func(_ context.Context, blockNumber int64) (models.RPCBlock, error) {
+			incrementAndGet(&rpcBlocksRequests, blockNumber)
+
+			// Fail every 10th block numbers the first 2 times
+			if blockNumber%10 == 0 {
+				requests, _ := rpcBlocksRequests.Load(blockNumber)
+				if requests.(int) <= 2 {
+					return models.RPCBlock{},
+						errors.Errorf("failing rpc request due to %v having only been requested %v times",
+							blockNumber, requests)
+				}
+			}
+
+			return models.RPCBlock{
+				BlockNumber: blockNumber,
+				Payload:     []byte(`block`),
+			}, nil
+		},
+		CloseFunc: func() error {
+			return nil
+		},
+	}
+	// Swap these to see logs
+	// logOutput := os.Stderr
+	logOutput := io.Discard
+	ing := ingester.New(
+		slog.New(slog.NewTextHandler(logOutput, nil)),
+		rpcClient,
+		duneapi,
+		duneapi,
+		ingester.Config{
+			BlockSubmitInterval:      time.Nanosecond,
+			MaxConcurrentRequests:    10,
+			MaxConcurrentRequestsDLQ: 1,
+			DLQOnly:                  false,
+			SkipFailedBlocks:         true,
+		},
+		nil, // progress
+		dlqBlockNumbers,
+	)
+
+	err := ing.Run(ctx, startBlockNumber, -1) // run until canceled
+	require.False(t, duneStoreContainsGaps(&blocksIndexed, maxBlockNumber))
+	require.GreaterOrEqual(t, lenSyncMap(&blocksIndexed), int(maxBlockNumber))
+	require.ErrorIs(t, err, context.Canceled) // this is expected
+}
+
+func duneStoreContainsGaps(blocksIndexed *sync.Map, maxBlockNumber int64) bool {
+	containsGap := false
+	blocksIndexed.Range(func(key, value any) bool {
+		blockNumber := key.(int64)
+		count := value.(int)
+		if blockNumber <= maxBlockNumber && count < 1 {
+			containsGap = true
+			return false
+		}
+		return true
+	})
+	return containsGap
+}
+
+func incrementAndGet(m *sync.Map, key interface{}) int {
+	for {
+		// Load the current value associated with the key else initialise
+		currentValue, _ := m.LoadOrStore(key, 0)
+
+		// Increment the current value.
+		newValue := currentValue.(int) + 1
+
+		// Attempt to store the new value back into the sync.Map. Compare-and-swap (CAS) approach ensures atomicity.
+		if m.CompareAndSwap(key, currentValue, newValue) {
+			// If the swap succeeded, return the new value.
+			return newValue
+		}
+		// If the swap failed, it means the value was updated by another goroutine. Retry the operation.
+	}
+}
+
+func lenSyncMap(m *sync.Map) int {
+	length := 0
+	m.Range(func(_, _ interface{}) bool {
+		length++
+		return true
+	})
+	return length
 }

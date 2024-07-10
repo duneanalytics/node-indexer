@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/duneanalytics/blockchain-ingester/lib/dlq"
+
 	"github.com/duneanalytics/blockchain-ingester/client/duneapi"
 	"github.com/duneanalytics/blockchain-ingester/client/jsonrpc"
 	"github.com/duneanalytics/blockchain-ingester/models"
@@ -24,48 +26,67 @@ type Ingester interface {
 	// It can safely be run concurrently.
 	FetchBlockLoop(context.Context, chan int64, chan models.RPCBlock) error
 
-	// SendBlocks pushes to DuneAPI the RPCBlock Payloads as they are received in an endless loop
+	// SendBlocks consumes RPCBlocks from the channel, reorders them, and sends batches to DuneAPI in an endless loop
 	// it will block until:
 	//	- the context is cancelled
 	//  - channel is closed
 	//  - a fatal error occurs
 	SendBlocks(ctx context.Context, blocksCh <-chan models.RPCBlock, startFrom int64) error
 
-	// This is just a placeholder for now
-	Info() Info
+	// ProduceBlockNumbersDLQ sends block numbers from the DLQ to outChan.
+	// It will run continuously until the context is cancelled.
+	// When the DLQ does not return an eligible next block, it waits for PollDLQInterval before trying again
+	ProduceBlockNumbersDLQ(ctx context.Context, outChan chan dlq.Item[int64]) error
+
+	// FetchBlockLoopDLQ fetches blocks sent on the channel and sends them on the other channel.
+	// It will run continuously until the context is cancelled, or the channel is closed.
+	// It can safely be run concurrently.
+	FetchBlockLoopDLQ(ctx context.Context,
+		blockNumbers <-chan dlq.Item[int64],
+		blocks chan<- dlq.Item[models.RPCBlock],
+	) error
+
+	// SendBlocksDLQ pushes one RPCBlock at a time to DuneAPI in the order they are received in
+	SendBlocksDLQ(ctx context.Context, blocks <-chan dlq.Item[models.RPCBlock]) error
 
 	Close() error
 }
 
 const (
-	defaultMaxBatchSize           = 5
 	defaultReportProgressInterval = 30 * time.Second
 )
 
 type Config struct {
-	MaxConcurrentRequests  int
-	PollInterval           time.Duration
-	ReportProgressInterval time.Duration
-	Stack                  models.EVMStack
-	BlockchainName         string
-	BlockSubmitInterval    time.Duration
-	SkipFailedBlocks       bool
+	MaxConcurrentRequests    int
+	MaxConcurrentRequestsDLQ int
+	PollInterval             time.Duration
+	PollDLQInterval          time.Duration
+	ReportProgressInterval   time.Duration
+	Stack                    models.EVMStack
+	BlockchainName           string
+	BlockSubmitInterval      time.Duration
+	SkipFailedBlocks         bool
+	DLQOnly                  bool
 }
 
 type ingester struct {
-	log  *slog.Logger
-	node jsonrpc.BlockchainClient
-	dune duneapi.BlockchainIngester
-	cfg  Config
-	info Info
+	log     *slog.Logger
+	node    jsonrpc.BlockchainClient
+	dune    duneapi.BlockchainIngester
+	duneDLQ duneapi.BlockchainIngester
+	cfg     Config
+	info    Info
+	dlq     *dlq.DLQ[int64]
 }
 
 func New(
 	log *slog.Logger,
 	node jsonrpc.BlockchainClient,
 	dune duneapi.BlockchainIngester,
+	duneDLQ duneapi.BlockchainIngester,
 	cfg Config,
 	progress *models.BlockchainIndexProgress,
+	dlq *dlq.DLQ[int64],
 ) Ingester {
 	info := NewInfo(cfg.BlockchainName, cfg.Stack.String())
 	if progress != nil {
@@ -73,18 +94,16 @@ func New(
 		info.IngestedBlockNumber = progress.LastIngestedBlockNumber
 	}
 	ing := &ingester{
-		log:  log.With("module", "ingester"),
-		node: node,
-		dune: dune,
-		cfg:  cfg,
-		info: info,
+		log:     log.With("module", "ingester"),
+		node:    node,
+		dune:    dune,
+		duneDLQ: duneDLQ,
+		cfg:     cfg,
+		info:    info,
+		dlq:     dlq,
 	}
 	if ing.cfg.ReportProgressInterval == 0 {
 		ing.cfg.ReportProgressInterval = defaultReportProgressInterval
 	}
 	return ing
-}
-
-func (i *ingester) Info() Info {
-	return i.info
 }
