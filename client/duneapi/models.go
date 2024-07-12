@@ -83,3 +83,17 @@ type BlockchainError struct {
 	Error        string    `json:"error"`
 	Source       string    `json:"source"`
 }
+
+type BlockchainGapsResponse struct {
+	Gaps []BlockGap `json:"gaps"`
+}
+
+// BlockGap declares an inclusive range of missing block numbers
+type BlockGap struct {
+	FirstMissing int64 `json:"first_missing"`
+	LastMissing  int64 `json:"last_missing"`
+}
+
+func (b *BlockchainGapsResponse) String() string {
+	return fmt.Sprintf("%+v", *b)
+}

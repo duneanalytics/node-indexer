@@ -20,6 +20,9 @@ var _ duneapi.BlockchainIngester = &BlockchainIngesterMock{}
 //
 //		// make and configure a mocked duneapi.BlockchainIngester
 //		mockedBlockchainIngester := &BlockchainIngesterMock{
+//			GetBlockGapsFunc: func(ctx context.Context) (*models.BlockchainGaps, error) {
+//				panic("mock out the GetBlockGaps method")
+//			},
 //			GetProgressReportFunc: func(ctx context.Context) (*models.BlockchainIndexProgress, error) {
 //				panic("mock out the GetProgressReport method")
 //			},
@@ -36,6 +39,9 @@ var _ duneapi.BlockchainIngester = &BlockchainIngesterMock{}
 //
 //	}
 type BlockchainIngesterMock struct {
+	// GetBlockGapsFunc mocks the GetBlockGaps method.
+	GetBlockGapsFunc func(ctx context.Context) (*models.BlockchainGaps, error)
+
 	// GetProgressReportFunc mocks the GetProgressReport method.
 	GetProgressReportFunc func(ctx context.Context) (*models.BlockchainIndexProgress, error)
 
@@ -47,6 +53,11 @@ type BlockchainIngesterMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// GetBlockGaps holds details about calls to the GetBlockGaps method.
+		GetBlockGaps []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+		}
 		// GetProgressReport holds details about calls to the GetProgressReport method.
 		GetProgressReport []struct {
 			// Ctx is the ctx argument value.
@@ -67,9 +78,42 @@ type BlockchainIngesterMock struct {
 			Payloads []models.RPCBlock
 		}
 	}
+	lockGetBlockGaps       sync.RWMutex
 	lockGetProgressReport  sync.RWMutex
 	lockPostProgressReport sync.RWMutex
 	lockSendBlocks         sync.RWMutex
+}
+
+// GetBlockGaps calls GetBlockGapsFunc.
+func (mock *BlockchainIngesterMock) GetBlockGaps(ctx context.Context) (*models.BlockchainGaps, error) {
+	if mock.GetBlockGapsFunc == nil {
+		panic("BlockchainIngesterMock.GetBlockGapsFunc: method is nil but BlockchainIngester.GetBlockGaps was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+	}{
+		Ctx: ctx,
+	}
+	mock.lockGetBlockGaps.Lock()
+	mock.calls.GetBlockGaps = append(mock.calls.GetBlockGaps, callInfo)
+	mock.lockGetBlockGaps.Unlock()
+	return mock.GetBlockGapsFunc(ctx)
+}
+
+// GetBlockGapsCalls gets all the calls that were made to GetBlockGaps.
+// Check the length with:
+//
+//	len(mockedBlockchainIngester.GetBlockGapsCalls())
+func (mock *BlockchainIngesterMock) GetBlockGapsCalls() []struct {
+	Ctx context.Context
+} {
+	var calls []struct {
+		Ctx context.Context
+	}
+	mock.lockGetBlockGaps.RLock()
+	calls = mock.calls.GetBlockGaps
+	mock.lockGetBlockGaps.RUnlock()
+	return calls
 }
 
 // GetProgressReport calls GetProgressReportFunc.

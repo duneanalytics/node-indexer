@@ -91,6 +91,9 @@ func (i *ingester) trySendBlockBatch(
 	for block, ok := collectedBlocks[nextBlockToSend]; ok; block, ok = collectedBlocks[nextBlockToSend] {
 		// Skip Failed block if we're configured to skip Failed blocks
 		if i.cfg.SkipFailedBlocks && block.Errored() {
+			i.log.Error("SendBlocks: RPCBlock has an error, requeueing...", "block", block.BlockNumber, "error", block.Error)
+			i.dlq.AddItemHighPriority(block.BlockNumber)
+			delete(collectedBlocks, nextBlockToSend)
 			nextBlockToSend++
 			continue
 		}
@@ -110,7 +113,7 @@ func (i *ingester) trySendBlockBatch(
 
 	// Send the batch
 	lastBlockNumber := blockBatch[len(blockBatch)-1].BlockNumber
-	if lastBlockNumber != nextBlockToSend-1 {
+	if !i.cfg.SkipFailedBlocks && lastBlockNumber != nextBlockToSend-1 {
 		panic("unexpected last block number")
 	}
 	if err := i.dune.SendBlocks(ctx, blockBatch); err != nil {
@@ -119,16 +122,24 @@ func (i *ingester) trySendBlockBatch(
 			return nextBlockToSend, nil
 		}
 
-		// Store error for reporting
-		blocknumbers := make([]string, len(blockBatch))
-		for i, block := range blockBatch {
-			blocknumbers[i] = fmt.Sprintf("%d", block.BlockNumber)
+		i.log.Error("SendBlocks: Failed to send batch, requeueing...",
+			"firstBlockInBatch", blockBatch[0].BlockNumber,
+			"lastBlockInBatch", lastBlockNumber, "error", err)
+		blockNumbers := make([]string, len(blockBatch))
+		for n, block := range blockBatch {
+			i.dlq.AddItemHighPriority(block.BlockNumber)
+			blockNumbers[n] = fmt.Sprintf("%d", block.BlockNumber)
 		}
 
 		i.info.Errors.ObserveDuneError(ErrorInfo{
 			Error:        err,
-			BlockNumbers: strings.Join(blocknumbers, ","),
+			BlockNumbers: strings.Join(blockNumbers, ","),
 		})
+
+		if i.cfg.SkipFailedBlocks {
+			i.log.Error("SendBlocks: Failed to send batch, continuing", "error", err)
+			return nextBlockToSend, nil
+		}
 
 		err := errors.Errorf("failed to send batch: %w", err)
 		i.log.Error("SendBlocks: Failed to send batch, exiting", "error", err)

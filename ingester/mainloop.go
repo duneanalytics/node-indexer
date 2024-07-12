@@ -3,8 +3,13 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"slices"
 	"sync/atomic"
 	"time"
+
+	"github.com/duneanalytics/blockchain-ingester/lib/dlq"
+	"github.com/emirpasic/gods/utils"
 
 	"github.com/duneanalytics/blockchain-ingester/models"
 	"github.com/go-errors/errors"
@@ -20,6 +25,18 @@ import (
 // The SendBlocks goroutine receives all blocks on an unbuffered channel,
 // but buffers them in a map until they can be sent in order.
 func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int64) error {
+	//
+	if i.cfg.DLQOnly {
+		i.cfg.MaxConcurrentRequests = 0 // if running DLQ Only mode, ignore the MaxConcurrentRequests and set this to 0
+	} else {
+		if i.cfg.MaxConcurrentRequests <= 0 {
+			return errors.Errorf("MaxConcurrentRequests must be > 0")
+		}
+	}
+	if i.cfg.MaxConcurrentRequestsDLQ <= 0 {
+		return errors.Errorf("MaxConcurrentRequestsDLQ must be > 0")
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errGroup, ctx := errgroup.WithContext(ctx)
@@ -33,9 +50,6 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int
 	defer close(blocks)
 
 	// Start MaxBatchSize goroutines to consume blocks concurrently
-	if i.cfg.MaxConcurrentRequests <= 0 {
-		return errors.Errorf("MaxConcurrentRequests must be > 0")
-	}
 	for range i.cfg.MaxConcurrentRequests {
 		errGroup.Go(func() error {
 			return i.FetchBlockLoop(ctx, blockNumbers, blocks)
@@ -46,6 +60,26 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int
 	})
 	errGroup.Go(func() error {
 		return i.SendBlocks(ctx, blocks, startBlockNumber)
+	})
+
+	// Start DLQ processing
+
+	blockNumbersDLQ := make(chan dlq.Item[int64])
+	defer close(blockNumbersDLQ)
+
+	blocksDLQ := make(chan dlq.Item[models.RPCBlock], i.cfg.MaxConcurrentRequestsDLQ+1)
+	defer close(blocksDLQ)
+
+	errGroup.Go(func() error {
+		return i.SendBlocksDLQ(ctx, blocksDLQ)
+	})
+	for range i.cfg.MaxConcurrentRequestsDLQ {
+		errGroup.Go(func() error {
+			return i.FetchBlockLoopDLQ(ctx, blockNumbersDLQ, blocksDLQ)
+		})
+	}
+	errGroup.Go(func() error {
+		return i.ProduceBlockNumbersDLQ(ctx, blockNumbersDLQ)
 	})
 
 	// Ingest until endBlockNumber, inclusive. If maxCount is <= 0, we ingest forever
@@ -131,14 +165,19 @@ func (i *ingester) FetchBlockLoop(
 
 				i.log.Error("Failed to get block by number",
 					"blockNumber", blockNumber,
-					"continueing", i.cfg.SkipFailedBlocks,
+					"continuing", i.cfg.SkipFailedBlocks,
 					"elapsed", time.Since(startTime),
 					"error", err,
 				)
 				if !i.cfg.SkipFailedBlocks {
 					return err
 				}
-				blocks <- models.RPCBlock{BlockNumber: blockNumber, Error: err}
+				select {
+				case <-ctx.Done():
+					i.log.Debug("FetchBlockLoop: Channel is closed, not sending block to channel", "blockNumber", block.BlockNumber)
+					return ctx.Err()
+				case blocks <- models.RPCBlock{BlockNumber: blockNumber, Error: err}:
+				}
 				continue
 			}
 
@@ -223,6 +262,127 @@ func (i *ingester) ReportProgress(ctx context.Context) error {
 	}
 }
 
+func (i *ingester) ProduceBlockNumbersDLQ(ctx context.Context, outChan chan dlq.Item[int64]) error {
+	for {
+		select {
+		case <-ctx.Done():
+			i.log.Debug("ProduceBlockNumbersDLQ: Context canceled, stopping")
+			return ctx.Err()
+		default:
+			block, ok := i.dlq.GetNextItem()
+
+			if ok {
+				if i.log.Enabled(ctx, slog.LevelDebug) {
+					i.log.Debug("ProduceBlockNumbersDLQ: Reprocessing block", "block", block,
+						"dlqSize", i.dlq.Size())
+				}
+				select {
+				case outChan <- *block:
+					// Successfully sent the block to the out channel
+				case <-ctx.Done():
+					i.log.Debug("ProduceBlockNumbersDLQ: Context canceled while sending block, stopping")
+					return ctx.Err()
+				}
+			} else {
+				if i.log.Enabled(ctx, slog.LevelDebug) {
+					i.log.Debug("ProduceBlockNumbersDLQ: No eligible blocks in the DLQ so sleeping",
+						"dlqSize", i.dlq.Size())
+				}
+				select {
+				case <-time.After(i.cfg.PollDLQInterval): // Polling interval when DLQ is empty
+				case <-ctx.Done():
+					i.log.Debug("ProduceBlockNumbersDLQ: Context canceled while sleeping, stopping")
+					return ctx.Err()
+				}
+			}
+		}
+	}
+}
+
+func (i *ingester) FetchBlockLoopDLQ(ctx context.Context, blockNumbers <-chan dlq.Item[int64],
+	blocks chan<- dlq.Item[models.RPCBlock],
+) error {
+	for {
+		select {
+		case <-ctx.Done():
+			i.log.Info("FetchBlockLoopDLQ: context is done")
+			return ctx.Err()
+		case blockNumber := <-blockNumbers:
+			startTime := time.Now()
+			block, err := i.node.BlockByNumber(ctx, blockNumber.Value)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					i.log.Error("FetchBlockLoopDLQ: Context canceled, stopping")
+					return ctx.Err()
+				}
+				i.log.Error("FetchBlockLoopDLQ: Failed to get block by number",
+					"blockNumber", blockNumber,
+					"elapsed", time.Since(startTime),
+					"error", err,
+				)
+				select {
+				case <-ctx.Done():
+					i.log.Debug("FetchBlockLoop: Channel is closed, not sending block to channel", "blockNumber", block.BlockNumber)
+					return ctx.Err()
+				case blocks <- dlq.MapItem(blockNumber, func(blockNumber int64) models.RPCBlock {
+					return models.RPCBlock{BlockNumber: blockNumber, Error: err}
+				}):
+				}
+				continue
+			}
+			getBlockElapsed := time.Since(startTime)
+			select {
+			case <-ctx.Done():
+				i.log.Debug("FetchBlockLoopDLQ: Channel is closed, not sending block to channel", "blockNumber", block.BlockNumber)
+				return ctx.Err()
+			case blocks <- dlq.MapItem(blockNumber, func(_ int64) models.RPCBlock {
+				return block
+			}):
+				i.log.Debug(
+					"FetchBlockLoopDLQ: Got and sent block",
+					"blockNumber", blockNumber,
+					"getBlockElapsed", getBlockElapsed,
+				)
+			}
+		}
+	}
+}
+
+func (i *ingester) SendBlocksDLQ(ctx context.Context, blocks <-chan dlq.Item[models.RPCBlock]) error {
+	i.log.Debug("SendBlocksDLQ: Starting to receive blocks")
+	for {
+		select {
+		case <-ctx.Done():
+			i.log.Debug("SendBlocksDLQ: Context canceled, stopping")
+			return ctx.Err()
+		case block, ok := <-blocks:
+			if !ok {
+				i.log.Debug("SendBlocksDLQ: Channel is closed, returning")
+				return nil
+			}
+			if block.Value.Errored() {
+				i.dlq.AddItem(block.Value.BlockNumber, block.Retries)
+				i.log.Error("Received FAILED block", "number", block.Value.BlockNumber)
+				// TODO: report error once ErrorState struct is made thread-safe
+			} else {
+				i.log.Debug(
+					"SendBlocksDLQ: Received block",
+					"blockNumber", block.Value.BlockNumber,
+				)
+				if err := i.duneDLQ.SendBlocks(ctx, []models.RPCBlock{block.Value}); err != nil {
+					if errors.Is(err, context.Canceled) {
+						i.log.Info("SendBlocksDLQ: Context canceled, stopping")
+						return ctx.Err()
+					}
+					i.log.Error("SendBlocksDLQ: Failed to send block, requeueing...", "block", block.Value.BlockNumber, "error", err)
+					i.dlq.AddItem(block.Value.BlockNumber, block.Retries)
+					// TODO: report error once ErrorState struct is made thread-safe
+				}
+			}
+		}
+	}
+}
+
 func (i *ingester) Close() error {
 	// Send a final progress report to flush progress
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -236,4 +396,17 @@ func (i *ingester) Close() error {
 	}
 
 	return i.node.Close()
+}
+
+func AddBlockGaps(dlq *dlq.DLQ[int64], gaps []models.BlockGap) {
+	// queue these in reverse so that recent blocks are retried first
+	slices.SortFunc(gaps, func(a, b models.BlockGap) int {
+		return -utils.Int64Comparator(a.FirstMissing, b.FirstMissing)
+	})
+
+	for _, gap := range gaps {
+		for i := gap.FirstMissing; i <= gap.LastMissing; i++ {
+			dlq.AddItem(i, 0)
+		}
+	}
 }

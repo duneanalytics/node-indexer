@@ -23,3 +23,6 @@ go.work.sum
 
 # Binary
 indexer
+bin
+
+.idea
