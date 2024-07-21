@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/duneanalytics/blockchain-ingester/lib/dlq"
 
 	"github.com/duneanalytics/blockchain-ingester/ingester"
@@ -22,6 +24,7 @@ import (
 )
 
 func TestRunUntilCancel(t *testing.T) {
+	t.Cleanup(resetDefaultRegistry)
 	ctx, cancel := context.WithCancel(context.Background())
 	maxBlockNumber := int64(10)
 	sentBlockNumber := int64(0)
@@ -92,6 +95,7 @@ func TestRunUntilCancel(t *testing.T) {
 }
 
 func TestProduceBlockNumbers(t *testing.T) {
+	t.Cleanup(resetDefaultRegistry)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
 		PostProgressReportFunc: func(_ context.Context, _ models.BlockchainIndexProgress) error {
 			return nil
@@ -136,6 +140,7 @@ func TestProduceBlockNumbers(t *testing.T) {
 }
 
 func TestSendBlocks(t *testing.T) {
+	t.Cleanup(resetDefaultRegistry)
 	sentBlockNumber := int64(0)
 	duneapi := &duneapi_mock.BlockchainIngesterMock{
 		SendBlocksFunc: func(_ context.Context, blocks []models.RPCBlock) error {
@@ -202,6 +207,7 @@ func TestSendBlocks(t *testing.T) {
 // TestRunBlocksOutOfOrder asserts that we can fetch blocks concurrently and that we ingest them in order
 // even if they are produced out of order. We ensure they are produced out of order by sleeping a random amount of time.
 func TestRunBlocksOutOfOrder(t *testing.T) {
+	t.Cleanup(resetDefaultRegistry)
 	ctx, cancel := context.WithCancel(context.Background())
 	maxBlockNumber := int64(1000)
 	sentBlockNumber := int64(0)
@@ -274,6 +280,7 @@ func TestRunBlocksOutOfOrder(t *testing.T) {
 
 // TestRunRPCNodeFails shows that we crash if the RPC client fails to fetch a block
 func TestRunRPCNodeFails(t *testing.T) {
+	t.Cleanup(resetDefaultRegistry)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	maxBlockNumber := int64(1000)
@@ -323,6 +330,7 @@ func TestRunRPCNodeFails(t *testing.T) {
 
 // TestRunRPCNodeFails shows that we crash if the RPC client fails to fetch a block
 func TestRunFailsIfNoConcurrentRequests(t *testing.T) {
+	t.Cleanup(resetDefaultRegistry)
 	logOutput := io.Discard
 	ing := ingester.New(
 		slog.New(slog.NewTextHandler(logOutput, nil)),
@@ -341,6 +349,7 @@ func TestRunFailsIfNoConcurrentRequests(t *testing.T) {
 }
 
 func TestRunFailsIfNoConcurrentRequestsDLQ(t *testing.T) {
+	t.Cleanup(resetDefaultRegistry)
 	logOutput := io.Discard
 	ing := ingester.New(
 		slog.New(slog.NewTextHandler(logOutput, nil)),
@@ -360,6 +369,7 @@ func TestRunFailsIfNoConcurrentRequestsDLQ(t *testing.T) {
 }
 
 func TestRunWithDLQ(t *testing.T) {
+	t.Cleanup(resetDefaultRegistry)
 	ctx, cancel := context.WithCancel(context.Background())
 	maxBlockNumber := int64(1000)
 	startBlockNumber := int64(10)
@@ -522,4 +532,11 @@ func lenSyncMap(m *sync.Map) int {
 		return true
 	})
 	return length
+}
+
+// resetDefaultRegistry resets the default Prometheus registry.
+func resetDefaultRegistry() {
+	registry := prometheus.NewRegistry()
+	prometheus.DefaultRegisterer = registry
+	prometheus.DefaultGatherer = registry
 }

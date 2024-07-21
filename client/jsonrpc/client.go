@@ -119,11 +119,16 @@ func (c *rpcClient) getResponseBody(
 			req.Header.Set(k, v)
 		}
 	}
+
+	t0 := time.Now()
 	resp, err := c.client.Do(req)
 	if err != nil {
+		observeRPCRequestErr(err, method, t0)
 		return fmt.Errorf("failed to send request for method %s: %w", method, err)
 	}
 	defer resp.Body.Close()
+	observeRPCRequestCode(resp.StatusCode, method, t0)
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("response for method %s has status code %d", method, resp.StatusCode)
 	}

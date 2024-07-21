@@ -7,12 +7,15 @@ import (
 	"context"
 	stdlog "log"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	stdsync "sync"
 	"syscall"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/duneanalytics/blockchain-ingester/client/duneapi"
 	"github.com/duneanalytics/blockchain-ingester/client/jsonrpc"
@@ -99,6 +102,15 @@ func main() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		err = http.ListenAndServe(":2112", nil)
+		if err != nil {
+			cancel()
+			stdlog.Fatal(err)
+		}
+	}()
 
 	// Get stored progress unless config indicates we should start from 0
 	var startBlockNumber int64

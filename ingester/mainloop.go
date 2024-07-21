@@ -25,7 +25,8 @@ import (
 // The SendBlocks goroutine receives all blocks on an unbuffered channel,
 // but buffers them in a map until they can be sent in order.
 func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int64) error {
-	//
+	registerIngesterMetrics(i)
+
 	if i.cfg.DLQOnly {
 		i.cfg.MaxConcurrentRequests = 0 // if running DLQ Only mode, ignore the MaxConcurrentRequests and set this to 0
 	} else {

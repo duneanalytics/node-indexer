@@ -186,11 +186,16 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 	req.Header.Set("x-dune-api-key", c.cfg.APIKey)
 	req.Header.Set("x-dune-batch-size", fmt.Sprintf("%d", request.BatchSize))
 	req = req.WithContext(ctx)
+
+	t0 := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		observeSendBlocksRequestErr(err, request.BatchSize, t0)
 		return err
 	}
 	defer resp.Body.Close()
+	observeSendBlocksRequestCode(resp.StatusCode, request.BatchSize, t0)
+
 	responseStatus = resp.Status
 
 	if resp.StatusCode != http.StatusOK {
