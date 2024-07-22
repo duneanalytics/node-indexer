@@ -4,7 +4,7 @@ type EVMStack string
 
 const (
 	OpStack       EVMStack = "opstack"
-	ArbitrumNitro EVMStack = "arbitrumnitro"
+	ArbitrumNitro EVMStack = "arbitrum-nitro"
 )
 
 func (e EVMStack) String() string {

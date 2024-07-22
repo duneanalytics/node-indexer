@@ -34,7 +34,18 @@ type rpcClient struct {
 	httpHeaders map[string]string
 }
 
-func NewClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:disable-line:unexported-return
+func NewClient(logger *slog.Logger, cfg Config) (BlockchainClient, error) {
+	switch cfg.EVMStack {
+	case models.OpStack:
+		return NewOpStackClient(logger, cfg)
+	case models.ArbitrumNitro:
+		return NewArbitrumNitroClient(logger, cfg)
+	default:
+		return nil, fmt.Errorf("unsupported EVM stack: %s", cfg.EVMStack)
+	}
+}
+
+func newClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:disable-line:unexported-return
 	client := retryablehttp.NewClient()
 	client.RetryMax = MaxRetries
 	client.Logger = log

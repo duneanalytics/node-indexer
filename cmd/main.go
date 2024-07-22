@@ -85,15 +85,11 @@ func main() {
 		logger.Info("Adding extra HTTP header to RPC requests", "key", key, "value", value)
 		rpcHTTPHeaders[key] = value
 	}
-	switch cfg.RPCStack {
-	case models.OpStack:
-		rpcClient, err = jsonrpc.NewOpStackClient(logger, jsonrpc.Config{
-			URL:         cfg.RPCNode.NodeURL,
-			HTTPHeaders: rpcHTTPHeaders,
-		})
-	default:
-		stdlog.Fatalf("unsupported RPC stack: %s", cfg.RPCStack)
-	}
+	rpcClient, err = jsonrpc.NewClient(logger, jsonrpc.Config{
+		URL:         cfg.RPCNode.NodeURL,
+		HTTPHeaders: rpcHTTPHeaders,
+		EVMStack:    cfg.RPCStack,
+	})
 	if err != nil {
 		stdlog.Fatal(err)
 	}
