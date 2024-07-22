@@ -18,7 +18,7 @@ type OpStackClient struct {
 var _ BlockchainClient = &OpStackClient{}
 
 func NewOpStackClient(log *slog.Logger, cfg Config) (*OpStackClient, error) {
-	rpcClient, err := NewClient(log.With("module", "jsonrpc"), cfg)
+	rpcClient, err := newClient(log.With("module", "jsonrpc"), cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -37,10 +37,7 @@ func NewOpStackClient(log *slog.Logger, cfg Config) (*OpStackClient, error) {
 func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (models.RPCBlock, error) {
 	tStart := time.Now()
 	defer func() {
-		c.log.Debug("BlockByNumber",
-			"blockNumber", blockNumber,
-			"duration", time.Since(tStart),
-		)
+		c.log.Debug("BlockByNumber", "blockNumber", blockNumber, "duration", time.Since(tStart))
 	}()
 	blockNumberHex := fmt.Sprintf("0x%x", blockNumber)
 
