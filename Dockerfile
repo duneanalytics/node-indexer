@@ -22,3 +22,4 @@ RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /app/indexer /
 ENTRYPOINT ["/indexer"]
+EXPOSE 2112
