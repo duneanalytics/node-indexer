@@ -57,6 +57,7 @@ func main() {
 		BlockchainName:     cfg.BlockchainName,
 		Stack:              cfg.RPCStack,
 		DisableCompression: cfg.DisableCompression,
+		DisableBatchHeader: cfg.Dune.DisableBatchHeader,
 	})
 	if err != nil {
 		stdlog.Fatal(err)

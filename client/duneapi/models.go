@@ -22,6 +22,8 @@ type Config struct {
 	// - lowers latency
 	// - reduces bandwidth
 	DisableCompression bool
+
+	DisableBatchHeader bool // for testing/backwards compatibility
 }
 
 // The response from the DuneAPI ingest endpoint.

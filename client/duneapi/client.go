@@ -101,33 +101,28 @@ func (c *client) SendBlocks(ctx context.Context, payloads []models.RPCBlock) err
 
 func (c *client) buildRequest(payloads []models.RPCBlock, buffer *bytes.Buffer) (*BlockchainIngestRequest, error) {
 	request := &BlockchainIngestRequest{}
+	var err error
 
+	buffer.Reset()
 	// not thread safe, multiple calls to the compressor here
 	if c.cfg.DisableCompression {
-		buffer.Reset()
-		for _, block := range payloads {
-			_, err := buffer.Write(block.Payload)
-			if err != nil {
-				return nil, err
-			}
+		err = WriteBlockBatch(buffer, payloads, c.cfg.DisableBatchHeader)
+		if err != nil {
+			return nil, err
 		}
-		request.Payload = buffer.Bytes()
 	} else {
-		buffer.Reset()
 		c.compressor.Reset(buffer)
-		for _, block := range payloads {
-			_, err := c.compressor.Write(block.Payload)
-			if err != nil {
-				return nil, err
-			}
+		err = WriteBlockBatch(c.compressor, payloads, c.cfg.DisableBatchHeader)
+		if err != nil {
+			return nil, err
 		}
 		err := c.compressor.Close()
 		if err != nil {
 			return nil, err
 		}
 		request.ContentEncoding = "application/zstd"
-		request.Payload = buffer.Bytes()
 	}
+	request.Payload = buffer.Bytes()
 
 	numbers := make([]string, len(payloads))
 	for i, payload := range payloads {
@@ -137,6 +132,7 @@ func (c *client) buildRequest(payloads []models.RPCBlock, buffer *bytes.Buffer) 
 	request.BlockNumbers = blockNumbers
 	request.IdempotencyKey = c.idempotencyKey(*request)
 	request.EVMStack = c.cfg.Stack.String()
+	request.BatchSize = len(payloads)
 	return request, nil
 }
 
@@ -281,6 +277,7 @@ func (c *client) PostProgressReport(ctx context.Context, progress models.Blockch
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-dune-api-key", c.cfg.APIKey)
 	req = req.WithContext(ctx)
