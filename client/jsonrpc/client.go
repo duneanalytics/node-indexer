@@ -167,3 +167,20 @@ func (c *rpcClient) Close() error {
 	c.wrkPool.Release()
 	return nil
 }
+
+func (c *rpcClient) buildRPCBlockResponse(number int64, results []*bytes.Buffer) (models.RPCBlock, error) {
+	var buffer bytes.Buffer
+	for _, res := range results {
+		buffer.Grow(res.Len())
+		buffer.ReadFrom(res)
+	}
+	return models.RPCBlock{
+		BlockNumber: number,
+		Payload:     buffer.Bytes(),
+	}, nil
+}
+
+func (c *rpcClient) putBuffer(buf *bytes.Buffer) {
+	buf.Reset()
+	c.bufPool.Put(buf)
+}

@@ -56,8 +56,7 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 	results := make([]*bytes.Buffer, len(methods))
 	for i, method := range methods {
 		results[i] = c.bufPool.Get().(*bytes.Buffer)
-		defer c.bufPool.Put(results[i])
-		results[i].Reset()
+		defer c.putBuffer(results[i])
 
 		group.Go(func() error {
 			errCh := make(chan error, 1)
@@ -66,6 +65,7 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 				err := c.getResponseBody(ctx, method, methodArgs[method], results[i])
 				if err != nil {
 					c.log.Error("Failed to get response for jsonRPC",
+						"blockNumber", blockNumber,
 						"method", method,
 						"error", err,
 					)
@@ -82,14 +82,5 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 		return models.RPCBlock{}, err
 	}
 
-	// copy the responses in order
-	var buffer bytes.Buffer
-	for _, res := range results {
-		buffer.Grow(res.Len())
-		buffer.ReadFrom(res)
-	}
-	return models.RPCBlock{
-		BlockNumber: blockNumber,
-		Payload:     buffer.Bytes(),
-	}, nil
+	return c.buildRPCBlockResponse(blockNumber, results)
 }
