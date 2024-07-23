@@ -93,6 +93,9 @@ func main() {
 		URL:         cfg.RPCNode.NodeURL,
 		HTTPHeaders: rpcHTTPHeaders,
 		EVMStack:    cfg.RPCStack,
+		// real max request concurrency to RPP node
+		// each block requires multiple RPC requests
+		TotalRPCConcurrency: cfg.BlockConcurrency * 4,
 	})
 	if err != nil {
 		stdlog.Fatal(err)
@@ -142,8 +145,8 @@ func main() {
 		duneClient,
 		duneClientDLQ,
 		ingester.Config{
-			MaxConcurrentRequests:    cfg.RPCConcurrency,
-			MaxConcurrentRequestsDLQ: cfg.DLQConcurrency,
+			MaxConcurrentRequests:    cfg.BlockConcurrency,
+			MaxConcurrentRequestsDLQ: cfg.DLQBlockConcurrency,
 			ReportProgressInterval:   cfg.ReportProgressInterval,
 			PollInterval:             cfg.PollInterval,
 			PollDLQInterval:          cfg.PollDLQInterval,

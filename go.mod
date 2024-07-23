@@ -8,6 +8,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/klauspost/compress v1.17.8
+	github.com/panjf2000/ants/v2 v2.10.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/sync v0.7.0

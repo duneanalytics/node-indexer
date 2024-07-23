@@ -13,6 +13,7 @@ import (
 	"github.com/duneanalytics/blockchain-ingester/lib/hexutils"
 	"github.com/duneanalytics/blockchain-ingester/models"
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/panjf2000/ants/v2"
 )
 
 type BlockchainClient interface {
@@ -22,8 +23,9 @@ type BlockchainClient interface {
 }
 
 const (
-	MaxRetries            = 10
-	DefaultRequestTimeout = 30 * time.Second
+	MaxRetries               = 10
+	DefaultRequestTimeout    = 30 * time.Second
+	DefaultMaxRPCConcurrency = 50 // safe default
 )
 
 type rpcClient struct {
@@ -32,6 +34,7 @@ type rpcClient struct {
 	log         *slog.Logger
 	bufPool     *sync.Pool
 	httpHeaders map[string]string
+	wrkPool     *ants.Pool
 }
 
 func NewClient(logger *slog.Logger, cfg Config) (BlockchainClient, error) {
@@ -64,6 +67,14 @@ func newClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:dis
 	client.Backoff = retryablehttp.LinearJitterBackoff
 	client.HTTPClient.Timeout = DefaultRequestTimeout
 
+	if cfg.TotalRPCConcurrency == 0 {
+		cfg.TotalRPCConcurrency = DefaultMaxRPCConcurrency
+	}
+	wkrPool, err := ants.NewPool(cfg.TotalRPCConcurrency)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create worker pool: %w", err)
+	}
+
 	rpc := &rpcClient{
 		client: client,
 		cfg:    cfg,
@@ -74,9 +85,10 @@ func newClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:dis
 			},
 		},
 		httpHeaders: cfg.HTTPHeaders,
+		wrkPool:     wkrPool,
 	}
 	// Ensure RPC node is up & reachable
-	_, err := rpc.LatestBlockNumber()
+	_, err = rpc.LatestBlockNumber()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to jsonrpc: %w", err)
 	}
@@ -152,5 +164,6 @@ func (c *rpcClient) getResponseBody(
 }
 
 func (c *rpcClient) Close() error {
+	c.wrkPool.Release()
 	return nil
 }
