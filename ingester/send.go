@@ -11,7 +11,7 @@ import (
 	"github.com/go-errors/errors"
 )
 
-const maxBatchSize = 100
+const maxBatchSize = 256
 
 // SendBlocks to Dune. We receive blocks from the FetchBlockLoop goroutines, potentially out of order.
 // We buffer the blocks in a map until we have no gaps, so that we can send them in order to Dune.
