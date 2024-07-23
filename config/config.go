@@ -11,8 +11,9 @@ import (
 )
 
 type DuneClient struct {
-	APIKey string `long:"dune-api-key" env:"DUNE_API_KEY" description:"API key for DuneAPI"`
-	URL    string `long:"dune-api-url" env:"DUNE_API_URL" description:"URL for DuneAPI" default:"https://api.dune.com"`
+	APIKey             string `long:"dune-api-key" env:"DUNE_API_KEY" description:"API key for DuneAPI"`
+	URL                string `long:"dune-api-url" env:"DUNE_API_URL" description:"URL for DuneAPI" default:"https://api.dune.com"`                                    // nolint:lll
+	DisableBatchHeader bool   `long:"duneapi-disable-batch-header" env:"DUNEAPI_DISABLE_BATCH_HEADERS" description:"Disable batch headers on DuneAPI request payload"` // nolint:lll
 }
 
 func (d DuneClient) HasError() error {
