@@ -92,7 +92,7 @@ func newClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:dis
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to jsonrpc: %w", err)
 	}
-	log.Info("Connected to jsonrpc", "url", cfg.URL)
+	log.Info("Initialized and Connected to node jsonRPC", "config", fmt.Sprintf("%+v", cfg))
 	return rpc, nil
 }
 
