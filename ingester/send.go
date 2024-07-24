@@ -17,7 +17,7 @@ const maxBatchSize = 256
 // We buffer the blocks in a map until we have no gaps, so that we can send them in order to Dune.
 func (i *ingester) SendBlocks(ctx context.Context, blocks <-chan models.RPCBlock, startBlockNumber int64) error {
 	// Buffer for temporarily storing blocks that have arrived out of order
-	collectedBlocks := make(map[int64]models.RPCBlock, maxBatchSize)
+	collectedBlocks := make(map[int64]models.RPCBlock, i.cfg.MaxBatchSize)
 	nextNumberToSend := startBlockNumber
 	batchTimer := time.NewTicker(i.cfg.BlockSubmitInterval)
 	defer batchTimer.Stop()
@@ -69,7 +69,7 @@ func (i *ingester) trySendCompletedBlocks(
 	nextBlockToSend int64,
 ) (int64, error) {
 	for {
-		nextBlock, err := i.trySendBlockBatch(ctx, collectedBlocks, nextBlockToSend, maxBatchSize)
+		nextBlock, err := i.trySendBlockBatch(ctx, collectedBlocks, nextBlockToSend, i.cfg.MaxBatchSize)
 		if err != nil || nextBlock == nextBlockToSend {
 			return nextBlock, err
 		}
