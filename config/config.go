@@ -60,6 +60,7 @@ type Config struct {
 	DLQBlockConcurrency int           `long:"dlq-concurrency" env:"DLQ_CONCURRENCY" description:"Number of concurrent block requests to the RPC node for DLQ processing" default:"2"` // nolint:lll
 	BlockSubmitInterval time.Duration `long:"block-submit-interval" env:"BLOCK_SUBMIT_INTERVAL" description:"Interval at which to submit batched blocks to Dune" default:"500ms"`     // nolint:lll
 	LogLevel            string        `long:"log" env:"LOG" description:"Log level" choice:"info" choice:"debug" choice:"warn" choice:"error" default:"info"`                         // nolint:lll
+	MaxBatchSize        int           `long:"max-batch-size" env:"MAX_BATCH_SIZE" description:"Max number of blocks to send in a single batch" default:"128"`                         // nolint:lll
 }
 
 func (c Config) HasError() error {

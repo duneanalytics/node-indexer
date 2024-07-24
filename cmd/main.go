@@ -147,6 +147,7 @@ func main() {
 		ingester.Config{
 			MaxConcurrentRequests:    cfg.BlockConcurrency,
 			MaxConcurrentRequestsDLQ: cfg.DLQBlockConcurrency,
+			MaxBatchSize:             cfg.MaxBatchSize,
 			ReportProgressInterval:   cfg.ReportProgressInterval,
 			PollInterval:             cfg.PollInterval,
 			PollDLQInterval:          cfg.PollDLQInterval,
