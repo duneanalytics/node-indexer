@@ -106,7 +106,7 @@ func New(
 	if ing.cfg.ReportProgressInterval == 0 {
 		ing.cfg.ReportProgressInterval = defaultReportProgressInterval
 	}
-	if ing.cfg.MaxBatchSize == 0 {
+	if ing.cfg.MaxBatchSize <= 0 {
 		ing.cfg.MaxBatchSize = maxBatchSize
 	} else if ing.cfg.MaxBatchSize > maxBatchSize {
 		ing.cfg.MaxBatchSize = maxBatchSize
