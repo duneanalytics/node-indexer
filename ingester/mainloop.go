@@ -46,8 +46,10 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int
 	defer close(blockNumbers)
 
 	// We buffer the block channel so that RPC requests can be made concurrently with sending blocks to Dune.
-	// We limit the buffer size to the same number of concurrent requests, so we exert some backpressure.
-	blocks := make(chan models.RPCBlock, maxBatchSize)
+	// We limit the buffer size to the k * maxBatchSize,
+	//  so we exert some backpressure.
+	//  but having enough to feed full batches to DuneAPI
+	blocks := make(chan models.RPCBlock, 2*maxBatchSize)
 	defer close(blocks)
 
 	// Start MaxBatchSize goroutines to consume blocks concurrently
