@@ -29,44 +29,36 @@ const (
 )
 
 type rpcClient struct {
-	client      *retryablehttp.Client
-	cfg         Config
-	log         *slog.Logger
 	bufPool     *sync.Pool
+	cfg         Config
+	client      HTTPClient
 	httpHeaders map[string]string
+	log         *slog.Logger
 	wrkPool     *ants.Pool
 }
 
-func NewClient(logger *slog.Logger, cfg Config) (BlockchainClient, error) {
+func NewClient(log *slog.Logger, cfg Config) (BlockchainClient, error) {
+	// use the production http client w/ retries
+	return NewRPCClient(log, NewHTTPClient(log), cfg)
+}
+
+func NewRPCClient(log *slog.Logger, client HTTPClient, cfg Config) (BlockchainClient, error) {
+	rpcClient, err := newClient(log.With("module", "jsonrpc"), client, cfg)
+	if err != nil {
+		return nil, err
+	}
 	switch cfg.EVMStack {
 	case models.OpStack:
-		return NewOpStackClient(logger, cfg)
+		return &OpStackClient{*rpcClient}, nil
 	case models.ArbitrumNitro:
-		return NewArbitrumNitroClient(logger, cfg)
+		return &ArbitrumNitroClient{*rpcClient}, nil
 	default:
 		return nil, fmt.Errorf("unsupported EVM stack: %s", cfg.EVMStack)
 	}
 }
 
-func newClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:disable-line:unexported-return
-	client := retryablehttp.NewClient()
-	client.RetryMax = MaxRetries
-	client.Logger = log
-	checkRetry := func(ctx context.Context, resp *http.Response, err error) (bool, error) {
-		yes, err2 := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
-		if yes {
-			if resp == nil {
-				log.Warn("Retrying request to RPC client", "error", err2)
-			} else {
-				log.Warn("Retrying request to RPC client", "statusCode", resp.Status, "error", err2)
-			}
-		}
-		return yes, err2
-	}
-	client.CheckRetry = checkRetry
-	client.Backoff = retryablehttp.LinearJitterBackoff
-	client.HTTPClient.Timeout = DefaultRequestTimeout
-
+func newClient(log *slog.Logger, client HTTPClient, cfg Config,
+) (*rpcClient, error) { // revive:disable-line:unexported-return
 	if cfg.TotalRPCConcurrency == 0 {
 		cfg.TotalRPCConcurrency = DefaultMaxRPCConcurrency
 	}
@@ -98,8 +90,7 @@ func newClient(log *slog.Logger, cfg Config) (*rpcClient, error) { // revive:dis
 
 func (c *rpcClient) LatestBlockNumber() (int64, error) {
 	buf := c.bufPool.Get().(*bytes.Buffer)
-	defer c.bufPool.Put(buf)
-	buf.Reset()
+	defer c.putBuffer(buf)
 
 	err := c.getResponseBody(context.Background(), "eth_blockNumber", []any{}, buf)
 	if err != nil {
