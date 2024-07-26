@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/models"
@@ -16,14 +15,6 @@ type OpStackClient struct {
 }
 
 var _ BlockchainClient = &OpStackClient{}
-
-func NewOpStackClient(log *slog.Logger, cfg Config) (*OpStackClient, error) {
-	rpcClient, err := newClient(log.With("module", "jsonrpc"), cfg)
-	if err != nil {
-		return nil, err
-	}
-	return &OpStackClient{*rpcClient}, nil
-}
 
 // BlockByNumber returns the block with the given blockNumber.
 // it uses 3 different methods to get the block:

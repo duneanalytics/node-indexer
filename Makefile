@@ -34,6 +34,7 @@ test:
 	CGO_ENABLED=1 go test -timeout=$(TEST_TIMEOUT) -race -bench=. -benchmem -cover ./...
 
 gen-mocks: bin/moq ./client/jsonrpc/ ./client/duneapi/
+	./bin/moq -pkg jsonrpc_mock -out ./mocks/jsonrpc/httpclient.go ./client/jsonrpc HTTPClient
 	./bin/moq -pkg jsonrpc_mock -out ./mocks/jsonrpc/rpcnode.go ./client/jsonrpc BlockchainClient
 	./bin/moq -pkg duneapi_mock -out ./mocks/duneapi/client.go ./client/duneapi BlockchainIngester
 

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/duneanalytics/blockchain-ingester/models"
@@ -17,14 +16,6 @@ type ArbitrumNitroClient struct {
 }
 
 var _ BlockchainClient = &ArbitrumNitroClient{}
-
-func NewArbitrumNitroClient(log *slog.Logger, cfg Config) (*ArbitrumNitroClient, error) {
-	rpcClient, err := newClient(log.With("module", "jsonrpc"), cfg)
-	if err != nil {
-		return nil, err
-	}
-	return &ArbitrumNitroClient{*rpcClient}, nil
-}
 
 // BlockByNumber returns the block with the given blockNumber.
 // it uses 3 different methods to get the block:
