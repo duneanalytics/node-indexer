@@ -14,6 +14,7 @@ import (
 	"github.com/duneanalytics/blockchain-ingester/models"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/panjf2000/ants/v2"
+	"golang.org/x/sync/errgroup"
 )
 
 type BlockchainClient interface {
@@ -108,6 +109,37 @@ func (c *rpcClient) LatestBlockNumber() (int64, error) {
 		return 0, err
 	}
 	return hexutils.IntFromHex(resp.Result)
+}
+
+// GroupedJSONrpc is a helper function to spawn multiple calls belonging to the same group.
+// errors are propagated to the errgroup.
+// concurrency is managed by the worker pool.
+func (c *rpcClient) GroupedJSONrpc(
+	ctx context.Context,
+	group *errgroup.Group,
+	method string,
+	args []any,
+	output *bytes.Buffer,
+	debugBlockNumber int64,
+) {
+	group.Go(func() error {
+		errCh := make(chan error, 1)
+		c.wrkPool.Submit(func() {
+			defer close(errCh)
+			err := c.getResponseBody(ctx, method, args, output)
+			if err != nil {
+				c.log.Error("Failed to get response for jsonRPC",
+					"blockNumber", debugBlockNumber,
+					"method", method,
+					"error", err,
+				)
+				errCh <- err
+			} else {
+				errCh <- nil
+			}
+		})
+		return <-errCh
+	})
 }
 
 // getResponseBody sends a request to the server and returns the response body
