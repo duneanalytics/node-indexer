@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/duneanalytics/blockchain-ingester/client/jsonrpc"
 	jsonrpc_mock "github.com/duneanalytics/blockchain-ingester/mocks/jsonrpc"
 	"github.com/duneanalytics/blockchain-ingester/models"
@@ -35,6 +34,8 @@ type MockedRequest struct {
 }
 
 func MockHTTPRequests(requests []MockedRequest) *jsonrpc_mock.HTTPClientMock {
+	// helper function to setup a mock http client with recorded request responses
+	// non-registered requests will return an error
 	return &jsonrpc_mock.HTTPClientMock{
 		DoFunc: func(req *retryablehttp.Request) (*http.Response, error) {
 			if req.Method != http.MethodPost {
@@ -81,6 +82,7 @@ func MockHTTPRequests(requests []MockedRequest) *jsonrpc_mock.HTTPClientMock {
 					return resp, nil
 				}
 			}
+			// for simplificy, we include a default response for eth_blockNumber with a valid response
 			if jsonReq.Method == "eth_blockNumber" {
 				resp := &http.Response{
 					StatusCode: 200,
