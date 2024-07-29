@@ -57,17 +57,17 @@ const (
 )
 
 type Config struct {
-	MaxConcurrentRequests    int
-	MaxConcurrentRequestsDLQ int
-	PollInterval             time.Duration
-	PollDLQInterval          time.Duration
-	ReportProgressInterval   time.Duration
-	Stack                    models.EVMStack
-	BlockchainName           string
-	BlockSubmitInterval      time.Duration
-	SkipFailedBlocks         bool
-	DLQOnly                  bool
-	MaxBatchSize             int
+	MaxConcurrentBlocks    int
+	DLQMaxConcurrentBlocks int
+	PollInterval           time.Duration
+	PollDLQInterval        time.Duration
+	ReportProgressInterval time.Duration
+	Stack                  models.EVMStack
+	BlockchainName         string
+	BlockSubmitInterval    time.Duration
+	SkipFailedBlocks       bool
+	DLQOnly                bool
+	MaxBatchSize           int
 }
 
 type ingester struct {

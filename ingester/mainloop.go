@@ -28,13 +28,13 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int
 	registerIngesterMetrics(i)
 
 	if i.cfg.DLQOnly {
-		i.cfg.MaxConcurrentRequests = 0 // if running DLQ Only mode, ignore the MaxConcurrentRequests and set this to 0
+		i.cfg.MaxConcurrentBlocks = 0 // if running DLQ Only mode, ignore the MaxConcurrentRequests and set this to 0
 	} else {
-		if i.cfg.MaxConcurrentRequests <= 0 {
+		if i.cfg.MaxConcurrentBlocks <= 0 {
 			return errors.Errorf("MaxConcurrentRequests must be > 0")
 		}
 	}
-	if i.cfg.MaxConcurrentRequestsDLQ <= 0 {
+	if i.cfg.DLQMaxConcurrentBlocks <= 0 {
 		return errors.Errorf("MaxConcurrentRequestsDLQ must be > 0")
 	}
 
@@ -52,8 +52,8 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int
 	blocks := make(chan models.RPCBlock, 2*maxBatchSize)
 	defer close(blocks)
 
-	// Start MaxBatchSize goroutines to consume blocks concurrently
-	for range i.cfg.MaxConcurrentRequests {
+	// Start MaxConcurrentBlocks goroutines to consume blocks concurrently
+	for range i.cfg.MaxConcurrentBlocks {
 		errGroup.Go(func() error {
 			return i.FetchBlockLoop(ctx, blockNumbers, blocks)
 		})
@@ -70,13 +70,13 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int
 	blockNumbersDLQ := make(chan dlq.Item[int64])
 	defer close(blockNumbersDLQ)
 
-	blocksDLQ := make(chan dlq.Item[models.RPCBlock], i.cfg.MaxConcurrentRequestsDLQ+1)
+	blocksDLQ := make(chan dlq.Item[models.RPCBlock], i.cfg.DLQMaxConcurrentBlocks+1)
 	defer close(blocksDLQ)
 
 	errGroup.Go(func() error {
 		return i.SendBlocksDLQ(ctx, blocksDLQ)
 	})
-	for range i.cfg.MaxConcurrentRequestsDLQ {
+	for range i.cfg.DLQMaxConcurrentBlocks {
 		errGroup.Go(func() error {
 			return i.FetchBlockLoopDLQ(ctx, blockNumbersDLQ, blocksDLQ)
 		})
@@ -91,7 +91,7 @@ func (i *ingester) Run(ctx context.Context, startBlockNumber int64, maxCount int
 		"runForever", maxCount <= 0,
 		"startBlockNumber", startBlockNumber,
 		"endBlockNumber", endBlockNumber,
-		"maxConcurrency", i.cfg.MaxConcurrentRequests,
+		"maxConcurrency", i.cfg.MaxConcurrentBlocks,
 	)
 
 	// Produce block numbers in the main goroutine
