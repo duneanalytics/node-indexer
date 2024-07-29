@@ -95,7 +95,7 @@ func main() {
 		EVMStack:    cfg.RPCStack,
 		// real max request concurrency to RPP node
 		// each block requires multiple RPC requests
-		TotalRPCConcurrency: cfg.BlockConcurrency * 4,
+		TotalRPCConcurrency: cfg.RPCConcurrency,
 	})
 	if err != nil {
 		stdlog.Fatal(err)
@@ -145,17 +145,19 @@ func main() {
 		duneClient,
 		duneClientDLQ,
 		ingester.Config{
-			MaxConcurrentRequests:    cfg.BlockConcurrency,
-			MaxConcurrentRequestsDLQ: cfg.DLQBlockConcurrency,
-			MaxBatchSize:             cfg.MaxBatchSize,
-			ReportProgressInterval:   cfg.ReportProgressInterval,
-			PollInterval:             cfg.PollInterval,
-			PollDLQInterval:          cfg.PollDLQInterval,
-			Stack:                    cfg.RPCStack,
-			BlockchainName:           cfg.BlockchainName,
-			BlockSubmitInterval:      cfg.BlockSubmitInterval,
-			SkipFailedBlocks:         cfg.RPCNode.SkipFailedBlocks,
-			DLQOnly:                  cfg.DLQOnly,
+			// OpStack does 3 requests per block, ArbitrumNova is variable
+			// leave some room for other requests
+			MaxConcurrentBlocks:    cfg.RPCConcurrency / 4,
+			DLQMaxConcurrentBlocks: cfg.DLQBlockConcurrency,
+			MaxBatchSize:           cfg.MaxBatchSize,
+			ReportProgressInterval: cfg.ReportProgressInterval,
+			PollInterval:           cfg.PollInterval,
+			PollDLQInterval:        cfg.PollDLQInterval,
+			Stack:                  cfg.RPCStack,
+			BlockchainName:         cfg.BlockchainName,
+			BlockSubmitInterval:    cfg.BlockSubmitInterval,
+			SkipFailedBlocks:       cfg.RPCNode.SkipFailedBlocks,
+			DLQOnly:                cfg.DLQOnly,
 		},
 		progress,
 		dlqBlockNumbers,

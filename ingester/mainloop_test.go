@@ -80,10 +80,10 @@ func TestRunUntilCancel(t *testing.T) {
 		duneapi,
 		duneapi,
 		ingester.Config{
-			BlockSubmitInterval:      time.Nanosecond,
-			MaxConcurrentRequests:    10,
-			MaxConcurrentRequestsDLQ: 2,
-			SkipFailedBlocks:         false,
+			BlockSubmitInterval:    time.Nanosecond,
+			MaxConcurrentBlocks:    10,
+			DLQMaxConcurrentBlocks: 2,
+			SkipFailedBlocks:       false,
 		},
 		nil, // progress
 		dlq.NewDLQ[int64](),
@@ -262,8 +262,8 @@ func TestRunBlocksOutOfOrder(t *testing.T) {
 		duneapi,
 		duneapi,
 		ingester.Config{
-			MaxConcurrentRequests:    20,
-			MaxConcurrentRequestsDLQ: 2, // fetch blocks in multiple goroutines
+			MaxConcurrentBlocks:    20,
+			DLQMaxConcurrentBlocks: 2, // fetch blocks in multiple goroutines
 			// big enough compared to the time spent in block by number to ensure batching. We panic
 			// in the mocked Dune client if we don't get a batch of blocks (more than one block).
 			BlockSubmitInterval: 50 * time.Millisecond,
@@ -315,10 +315,10 @@ func TestRunRPCNodeFails(t *testing.T) {
 		duneapi,
 		duneapi,
 		ingester.Config{
-			MaxConcurrentRequests:    10,
-			MaxConcurrentRequestsDLQ: 2,
-			BlockSubmitInterval:      time.Millisecond,
-			SkipFailedBlocks:         false,
+			MaxConcurrentBlocks:    10,
+			DLQMaxConcurrentBlocks: 2,
+			BlockSubmitInterval:    time.Millisecond,
+			SkipFailedBlocks:       false,
 		},
 		nil, // progress
 		dlq.NewDLQ[int64](),
@@ -338,7 +338,7 @@ func TestRunFailsIfNoConcurrentRequests(t *testing.T) {
 		nil,
 		nil,
 		ingester.Config{
-			MaxConcurrentRequests: 0,
+			MaxConcurrentBlocks: 0,
 		},
 		nil, // progress
 		dlq.NewDLQ[int64](),
@@ -357,8 +357,8 @@ func TestRunFailsIfNoConcurrentRequestsDLQ(t *testing.T) {
 		nil,
 		nil,
 		ingester.Config{
-			MaxConcurrentRequests:    10,
-			MaxConcurrentRequestsDLQ: 0,
+			MaxConcurrentBlocks:    10,
+			DLQMaxConcurrentBlocks: 0,
 		},
 		nil, // progress
 		dlq.NewDLQ[int64](),
@@ -478,11 +478,11 @@ func TestRunWithDLQ(t *testing.T) {
 		duneapi,
 		duneapi,
 		ingester.Config{
-			BlockSubmitInterval:      time.Nanosecond,
-			MaxConcurrentRequests:    10,
-			MaxConcurrentRequestsDLQ: 1,
-			DLQOnly:                  false,
-			SkipFailedBlocks:         true,
+			BlockSubmitInterval:    time.Nanosecond,
+			MaxConcurrentBlocks:    10,
+			DLQMaxConcurrentBlocks: 1,
+			DLQOnly:                false,
+			SkipFailedBlocks:       true,
 		},
 		nil, // progress
 		dlqBlockNumbers,

@@ -47,8 +47,16 @@ Also, we mention some of the options here:
 The `log` flag (environment variable `LOG`) controls the log level. Use `--log debug`/`LOG=debug` to emit more logs than the default `info` level. To emit less logs, use `warn`, or `error` (least).
 
 ### Tuning RPC concurrency
-The flag `--rpc-concurrency` (environment variable `RPC_CONCURRENCY`) specifies the number of threads (goroutines)
-to run concurrently to perform RPC node requests. Default is 25.
+The flag `--rpc-concurrency` (environment variable `RPC_CONCURRENCY`) specifies the number of threads (goroutines) to run concurrently to perform RPC node requests. See `--help` for up to date default value.
+
+### Tuning for throughput
+Throughput depends on: latency & request rate between RPC <-> Node Indexer <--> DuneAPI and can be tuned via a combination of:
+1. RPC_CONCURRENCY, higher values feed more blocks into the node indexer to process
+1. MAX_BATCH_SIZE, higher values send more blocks per request to DuneAPI
+1. BLOCK_SUBMIT_INTERVAL, the interval at which blocks to DuneAPI
+See `--help` for up to date default values.
+
+
 
 ### RPC poll interval
 The flag `--rpc-poll-interval` (environment variable `RPC_POLL_INTERVAL`) specifies the duration to wait before checking
