@@ -1,6 +1,7 @@
 package jsonrpc_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -12,6 +13,13 @@ func TestOpStackBasic(t *testing.T) {
 	getBlockByNumberResponse := readFileForTest("testdata/opstack-eth_getBlockByNumber.json")
 	getBlockReceiptsResponse := readFileForTest("testdata/opstack-eth_getBlockReceipts.json")
 	debugtraceBlockByNumberResponse := readFileForTest("testdata/opstack-debug_traceBlockByNumber.json")
+
+	var expectedPayload bytes.Buffer
+	expectedPayload.Write(getBlockByNumberResponse.Bytes())
+	expectedPayload.Write(getBlockReceiptsResponse.Bytes())
+	expectedPayload.Write(debugtraceBlockByNumberResponse.Bytes())
+	expectedPayloadBytes := expectedPayload.Bytes()
+
 	blockNumberHex := "0x7a549b"
 	blockNumber := int64(8017051)
 	httpClientMock := MockHTTPRequests(
@@ -53,4 +61,5 @@ func TestOpStackBasic(t *testing.T) {
 	require.NotNil(t, block)
 	require.Equal(t, blockNumber, block.BlockNumber)
 	require.False(t, block.Errored())
+	require.Equal(t, expectedPayloadBytes, block.Payload)
 }
