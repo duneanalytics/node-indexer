@@ -49,24 +49,7 @@ func (c *OpStackClient) BlockByNumber(ctx context.Context, blockNumber int64) (m
 		results[i] = c.bufPool.Get().(*bytes.Buffer)
 		defer c.putBuffer(results[i])
 
-		group.Go(func() error {
-			errCh := make(chan error, 1)
-			c.wrkPool.Submit(func() {
-				defer close(errCh)
-				err := c.getResponseBody(ctx, method, methodArgs[method], results[i])
-				if err != nil {
-					c.log.Error("Failed to get response for jsonRPC",
-						"blockNumber", blockNumber,
-						"method", method,
-						"error", err,
-					)
-					errCh <- err
-				} else {
-					errCh <- nil
-				}
-			})
-			return <-errCh
-		})
+		c.GroupedJSONrpc(ctx, group, method, methodArgs[method], results[i], blockNumber)
 	}
 
 	if err := group.Wait(); err != nil {
