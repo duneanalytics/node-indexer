@@ -67,3 +67,6 @@ where each pair is separated by `:` (make sure to quote the full string to avoid
 ```
 docker run --env RPC_HTTP_HEADERS='header1:value1|header2:value2' ... duneanalytics/node-indexer:<version>
 ```
+
+## Metrics
+The process exposes prometheus metrics which you can scrape and explore: `http://localhost:2112/metrics`
