@@ -10,9 +10,12 @@ import (
 )
 
 func TestOpStackBasic(t *testing.T) {
-	getBlockByNumberResponse := readFileForTest("testdata/opstack-eth_getBlockByNumber.json")
-	getBlockReceiptsResponse := readFileForTest("testdata/opstack-eth_getBlockReceipts.json")
-	debugtraceBlockByNumberResponse := readFileForTest("testdata/opstack-debug_traceBlockByNumber.json")
+	getBlockByNumberResponse := readFileForTest(
+		"testdata/opstack-MODE-block-0x7a549b-eth_getBlockByNumber.json")
+	getBlockReceiptsResponse := readFileForTest(
+		"testdata/opstack-MODE-block-0x7a549b-eth_getBlockReceipts.json")
+	debugtraceBlockByNumberResponse := readFileForTest(
+		"testdata/opstack-MODE-block-0x7a549b-debug_traceBlockByNumber.json")
 
 	var expectedPayload bytes.Buffer
 	expectedPayload.Write(getBlockByNumberResponse.Bytes())
