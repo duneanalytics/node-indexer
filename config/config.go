@@ -43,11 +43,12 @@ func (r RPCClient) HasError() error {
 }
 
 type Config struct {
-	BlockHeight            int64  `long:"block-height" env:"BLOCK_HEIGHT" description:"block height to start from" default:"-1"`                         // nolint:lll
-	BlockchainName         string `long:"blockchain-name" env:"BLOCKCHAIN_NAME" description:"name of the blockchain" required:"true"`                    // nolint:lll
-	DisableCompression     bool   `long:"disable-compression" env:"DISABLE_COMPRESSION" description:"disable compression when sending data to Dune"`     // nolint:lll
-	DisableGapsQuery       bool   `long:"disable-gaps-query" env:"DISABLE_GAPS_QUERY" description:"disable gaps query used to populate the initial DLQ"` // nolint:lll
-	DLQOnly                bool   `long:"dlq-only" env:"DLQ_ONLY" description:"Runs just the DLQ processing on its own"`                                 // nolint:lll
+	BlockHeight            int64  `long:"block-height" env:"BLOCK_HEIGHT" description:"block height to start from" default:"-1"`                                   // nolint:lll
+	BlockchainName         string `long:"blockchain-name" env:"BLOCKCHAIN_NAME" description:"name of the blockchain" required:"true"`                              // nolint:lll
+	DisableCompression     bool   `long:"disable-compression" env:"DISABLE_COMPRESSION" description:"disable compression when sending data to Dune"`               // nolint:lll
+	DisableGapsQuery       bool   `long:"disable-gaps-query" env:"DISABLE_GAPS_QUERY" description:"disable gaps query used to populate the initial DLQ"`           // nolint:lll
+	DLQOnly                bool   `long:"dlq-only" env:"DLQ_ONLY" description:"Runs just the DLQ processing on its own"`                                           // nolint:lll
+	DryRun                 bool   `long:"dry-run" env:"DRY_RUN" description:"When enabled, data is sent to Dune for validation but is not written to Dune tables"` // nolint:lll
 	Dune                   DuneClient
 	PollInterval           time.Duration `long:"rpc-poll-interval" env:"RPC_POLL_INTERVAL" description:"Interval to poll the blockchain node" default:"300ms"`    // nolint:lll
 	PollDLQInterval        time.Duration `long:"dlq-poll-interval" env:"DLQ_POLL_INTERVAL" description:"Interval to poll the dlq" default:"300ms"`                // nolint:lll
