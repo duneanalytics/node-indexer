@@ -58,6 +58,7 @@ func main() {
 		Stack:              cfg.RPCStack,
 		DisableCompression: cfg.DisableCompression,
 		DisableBatchHeader: cfg.Dune.DisableBatchHeader,
+		DryRun:             cfg.DryRun,
 	})
 	if err != nil {
 		stdlog.Fatal(err)
@@ -71,6 +72,7 @@ func main() {
 		BlockchainName:     cfg.BlockchainName,
 		Stack:              cfg.RPCStack,
 		DisableCompression: cfg.DisableCompression,
+		DryRun:             cfg.DryRun,
 	})
 	if err != nil {
 		stdlog.Fatal(err)

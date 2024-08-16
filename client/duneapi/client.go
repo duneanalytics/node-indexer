@@ -167,6 +167,9 @@ func (c *client) sendRequest(ctx context.Context, request BlockchainIngestReques
 	}()
 
 	url := fmt.Sprintf("%s/api/beta/blockchain/%s/ingest", c.cfg.URL, c.cfg.BlockchainName)
+	if c.cfg.DryRun {
+		url = fmt.Sprintf("%s/api/beta/blockchain/%s/ingest/dry-run", c.cfg.URL, c.cfg.BlockchainName)
+	}
 	c.log.Debug("Sending request", "url", url)
 	req, err := retryablehttp.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(request.Payload))
 	if err != nil {
@@ -224,6 +227,10 @@ func (c *client) Close() error {
 }
 
 func (c *client) PostProgressReport(ctx context.Context, progress models.BlockchainIndexProgress) error {
+	if c.cfg.DryRun {
+		return nil
+	}
+
 	var request PostBlockchainProgressRequest
 	var err error
 	var responseStatus string
@@ -300,6 +307,15 @@ func (c *client) PostProgressReport(ctx context.Context, progress models.Blockch
 }
 
 func (c *client) GetProgressReport(ctx context.Context) (*models.BlockchainIndexProgress, error) {
+	if c.cfg.DryRun {
+		return &models.BlockchainIndexProgress{
+			BlockchainName:          c.cfg.BlockchainName,
+			EVMStack:                c.cfg.Stack.String(),
+			LastIngestedBlockNumber: -1, // no block ingested
+			LatestBlockNumber:       0,
+		}, nil
+	}
+
 	var response GetBlockchainProgressResponse
 	var err error
 	var responseStatus string
@@ -372,6 +388,10 @@ func (c *client) GetProgressReport(ctx context.Context) (*models.BlockchainIndex
 }
 
 func (c *client) GetBlockGaps(ctx context.Context) (*models.BlockchainGaps, error) {
+	if c.cfg.DryRun {
+		return &models.BlockchainGaps{}, nil
+	}
+
 	var response BlockchainGapsResponse
 	var err error
 	var responseStatus string

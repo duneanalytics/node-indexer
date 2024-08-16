@@ -23,6 +23,8 @@ type Config struct {
 	// - reduces bandwidth
 	DisableCompression bool
 
+	DryRun bool
+
 	DisableBatchHeader bool // for testing/backwards compatibility
 }
 
