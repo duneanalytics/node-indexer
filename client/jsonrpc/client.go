@@ -122,17 +122,29 @@ func (c *rpcClient) GroupedJSONrpc(
 	output *bytes.Buffer,
 	debugBlockNumber int64,
 ) {
+	c.execOnPoolInGroup(group, func() error {
+		err := c.getResponseBody(ctx, method, args, output)
+		if err != nil {
+			c.log.Error("Failed to get response for jsonRPC",
+				"blockNumber", debugBlockNumber,
+				"method", method,
+				"error", err,
+			)
+		}
+		return err
+	})
+}
+
+func (c *rpcClient) execOnPoolInGroup(
+	group *errgroup.Group,
+	function func() error,
+) {
 	group.Go(func() error {
 		errCh := make(chan error, 1)
 		c.wrkPool.Submit(func() {
 			defer close(errCh)
-			err := c.getResponseBody(ctx, method, args, output)
+			err := function()
 			if err != nil {
-				c.log.Error("Failed to get response for jsonRPC",
-					"blockNumber", debugBlockNumber,
-					"method", method,
-					"error", err,
-				)
 				errCh <- err
 			} else {
 				errCh <- nil
