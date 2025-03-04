@@ -1,7 +1,7 @@
 package main
 
 // ingester is a "synchronizer" that ingests into DuneAPI the blocks from the blockchain.
-// it has the ability to resume and catch up with the the head of the blockchain.
+// it has the ability to resume and catch up with the head of the blockchain.
 
 import (
 	"context"
