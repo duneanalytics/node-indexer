@@ -1,4 +1,4 @@
-.PHONY: all setup lint build test image-build image-push
+.PHONY: all setup lint lint-timezone build test image-build image-push
 
 TEST_TIMEOUT := 10s
 SHELL := /bin/bash
@@ -22,12 +22,24 @@ bin/gofumpt: bin
 build: cmd/main.go
 	CGO_ENABLED=0 go build -ldflags="-X github.com/duneanalytics/blockchain-ingester/client/duneapi.commitHash=$(shell git rev-parse --short HEAD)" -o indexer cmd/main.go
 
-lint: bin/golangci-lint bin/gofumpt
+lint: bin/golangci-lint bin/gofumpt lint-timezone
 	go fmt ./...
 	go vet ./...
 	bin/golangci-lint -c .golangci.yml run ./...
 	bin/gofumpt -l -e -d ./
 	go mod tidy
+
+# All binary entrypoints must set time.Local = time.UTC in init() to ensure
+# time.Now() always returns UTC.
+lint-timezone:
+	@fail=0; \
+	for f in $$(find . -name main.go -path '*/cmd/*/main.go'); do \
+		if ! grep -q 'time\.Local = time\.UTC' "$$f"; then \
+			echo "ERROR: $$f missing 'time.Local = time.UTC' in init()"; \
+			fail=1; \
+		fi; \
+	done; \
+	if [ "$$fail" -eq 1 ]; then exit 1; fi
 
 test:
 	go mod tidy
